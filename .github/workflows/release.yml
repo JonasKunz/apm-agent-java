@@ -1,0 +1,59 @@
+---
+# Releases the agent
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'The branch to release'
+        required: true
+        default: 'main'
+      version:
+        description: 'The version to release (e.g. 1.2.3). This workflow will automatically perform the required version bumps'
+        required: true
+      update_changelog:
+        description: |
+          If enabled, everything in the changelog from the "Unreleased" section will be automatically moved to a new section for the new release.
+          If disabled, the changelog needs to be prepared for the release manually before triggering this workflow.
+        type: boolean
+        required: true
+        default: true
+
+env:
+  JAVA_VERSION: 17
+  JAVA_DIST: adopt
+  MAVEN_CONFIG: >-
+    -V
+    -B
+    -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
+    -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.http.retryHandler.count=3
+    -Dmaven.wagon.httpconnectionManager.ttlSeconds=25
+
+jobs:
+  prepare_release:
+    name: "Changelog and Version Bump"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        #TODO: Use apmmachine + setup authorization (SSH?)
+        with:
+          ref: ${{ inputs.branch }}
+      - name: Set up git user
+        run: |
+          git config user.name todo-github-actions
+          git config user.email todo-github-actions@github.com
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DIST }}
+          cache: 'maven'
+      - name: Prepare changelog for release
+        if: ${{ inputs.update_changelog }}
+        run: |
+          java .ci/ReleaseChangelog.java CHANGELOG.asciidoc ${{ inputs.version }}
+          git commit -m "Prepare changelog for release ${{ inputs.version }}" CHANGELOG.asciidoc
+      - name: Bump version and add git tag
+        run: ./mvnw release:prepare -B -DpushChanges=false "-Darguments=-DskipTests -Dmaven.javadoc.skip=true" -DreleaseVersion=${{ inputs.version }}
+      - run: git push --atomic origin ${{ inputs.branch }} v${{ inputs.version }}

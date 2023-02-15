@@ -36,6 +36,7 @@ namespace elastic
                 return result;
             }
 
+            //TODO: Guard against reentrancy with a thread_local bool
             void JNICALL allocationCallback(jvmtiEnv *jvmti_env, JNIEnv* jniEnv, jthread thread, jobject object, jclass object_klass, jlong size) {
                 auto callback = javaAllocationCallback.load();
                 if(callback.method != NULL) {

@@ -43,7 +43,7 @@ public class JVMTIAgent {
     private static volatile State state = State.NOT_LOADED;
 
     private static boolean allocationSamplingEnabled = false;
-    private static int allocationSamplingRate = 512 * 1024;
+    private static volatile int allocationSamplingRate = 512 * 1024;
 
     public static int getStackTrace(int skipFrames, int maxFrames, boolean collectLocations, long[] buffer) {
         int minBufferLen = collectLocations ? maxFrames * 2 : maxFrames;
@@ -76,8 +76,13 @@ public class JVMTIAgent {
         return JVMTIAgentAccess.getMethodName0(methodId, appendSignature);
     }
 
-    public static synchronized void setAllocationSamplingCallback(AllocationCallback cb) {
-        JVMTIAgentAccess.setAllocationCallback(cb);
+    public static synchronized void setAllocationSamplingCallback(final AllocationCallback cb) {
+        JVMTIAgentAccess.setAllocationCallback(new JVMTIAgentAccess.JVMTIAllocationCallback() {
+            @Override
+            public void objectAllocated(Object object, long sizeBytes) {
+                cb.objectAllocated(object, allocationSamplingRate, sizeBytes);
+            }
+        });
     }
 
     public static synchronized void setAllocationSamplingRate(int samplingRateBytes) {
@@ -152,7 +157,7 @@ public class JVMTIAgent {
         }
     }
 
-    public static synchronized void doDestroy() {
+    public static synchronized void destroy() {
         switch (state) {
             case INITIALIZED:
                 try {

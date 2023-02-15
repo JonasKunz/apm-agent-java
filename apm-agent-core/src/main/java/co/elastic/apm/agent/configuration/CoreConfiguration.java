@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.configuration;
 
 import co.elastic.apm.agent.bci.ElasticApmAgent;
+import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.configuration.converter.ListValueConverter;
 import co.elastic.apm.agent.configuration.converter.RoundedDoubleConverter;
 import co.elastic.apm.agent.configuration.converter.TimeDuration;
@@ -27,7 +28,6 @@ import co.elastic.apm.agent.configuration.validation.RegexValidator;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.matcher.MethodMatcher;
 import co.elastic.apm.agent.matcher.MethodMatcherValueConverter;
-import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.matcher.WildcardMatcherValueConverter;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
@@ -96,6 +96,16 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         .dynamic(true)
         .tags("added[1.0.0,Changing this value at runtime is possible since version 1.15.0]")
         .buildWithDefault(true);
+
+
+    private final ConfigurationOption<Integer> allocationProfilingRate = ConfigurationOption.integerOption()
+        .key("allocation_profiling_rate")
+        .configurationCategory(CORE_CATEGORY)
+        .description("Sampling rate for allocation profiling in bytes")
+        .dynamic(true)
+        .tags("added[1.37.0]", "experimental")
+        .buildWithDefault(512 * 1024);
+
 
     private final ConfigurationOption<String> serviceName = ConfigurationOption.stringOption()
         .key(SERVICE_NAME)
@@ -1075,6 +1085,10 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
 
     public TraceContinuationStrategy getTraceContinuationStrategy() {
         return traceContinuationStrategy.get();
+    }
+
+    public ConfigurationOption<Integer> getAllocationProfilingRate() {
+        return allocationProfilingRate;
     }
 
     public enum EventType {

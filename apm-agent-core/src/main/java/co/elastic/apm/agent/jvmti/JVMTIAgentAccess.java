@@ -22,10 +22,22 @@ import javax.annotation.Nullable;
 
 public class JVMTIAgentAccess {
 
+    public interface JVMTIAllocationCallback {
 
-    private static volatile AllocationCallback allocationCallback;
+        /**
+         * Called when a sampled allocation happens.
+         * Called on the thread who is doing the allocation.
+         *
+         * @param object
+         * @param sizeBytes
+         */
+        void objectAllocated(Object object, long sizeBytes);
 
-    static void setAllocationCallback(AllocationCallback callback) {
+    }
+
+    private static volatile JVMTIAllocationCallback allocationCallback;
+
+    static void setAllocationCallback(JVMTIAllocationCallback callback) {
         allocationCallback = callback;
     }
 
@@ -49,7 +61,7 @@ public class JVMTIAgentAccess {
 
     @SuppressWarnings("unused")
     public static void allocationCallback(Object allocated, long allocSize) {
-        AllocationCallback cb = allocationCallback;
+        JVMTIAllocationCallback cb = allocationCallback;
         if (cb != null) {
             cb.objectAllocated(allocated, allocSize);
         }

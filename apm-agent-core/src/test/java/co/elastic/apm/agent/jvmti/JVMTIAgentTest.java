@@ -47,7 +47,7 @@ public class JVMTIAgentTest {
 
     @AfterEach
     void destroy() {
-        JVMTIAgent.doDestroy();
+        JVMTIAgent.destroy();
     }
 
     private static StackTrace getStackTraceAfterRecursion(int recursionDepth, int skipFrames, int maxFrames, boolean collectLocations) {
@@ -82,7 +82,7 @@ public class JVMTIAgentTest {
 
         JVMTIAgent.setAllocationProfilingEnabled(true);
         JVMTIAgent.setAllocationSamplingRate(rate);
-        JVMTIAgent.setAllocationSamplingCallback((object, size) -> {
+        JVMTIAgent.setAllocationSamplingCallback((object, samplingRate, size) -> {
             if (Thread.currentThread() == currentThread) {
                 samplesOnCurrentThreadRef.incrementAndGet();
                 if (smallestSizeRef.get() > size) {

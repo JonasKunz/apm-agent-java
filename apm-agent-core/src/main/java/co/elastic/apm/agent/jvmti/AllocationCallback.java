@@ -27,6 +27,6 @@ public interface AllocationCallback {
      * @param object
      * @param sizeBytes
      */
-    void objectAllocated(Object object, long sizeBytes);
+    void objectAllocated(Object object, int currentSamplingRate, long sizeBytes);
 
 }

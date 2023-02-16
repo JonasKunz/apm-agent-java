@@ -1,7 +1,8 @@
 #include "ElasticJvmtiAgent.h"
 #include <memory>
+#include <cstring>
 #include <array>
-#include <atomic>
+#include <mutex>
 
 namespace elastic
 {
@@ -11,12 +12,6 @@ namespace elastic
         static jvmtiEnv* jvmti;
         static bool allocationSamplingEnabled;
 
-        struct AllocCallback {
-            jclass clazz;
-            jmethodID method;
-        };
-
-        static std::atomic<AllocCallback> javaAllocationCallback{};
 
         namespace {
 
@@ -36,11 +31,31 @@ namespace elastic
                 return result;
             }
 
-            //TODO: Guard against reentrancy with a thread_local bool
+            std::mutex allocCallbackMutex;
+            volatile jclass allocCallbackClass;
+            volatile jmethodID allocCallbackMethod;
+
+            thread_local bool allocationCallbackEntered = false;
+
             void JNICALL allocationCallback(jvmtiEnv *jvmti_env, JNIEnv* jniEnv, jthread thread, jobject object, jclass object_klass, jlong size) {
-                auto callback = javaAllocationCallback.load();
-                if(callback.method != NULL) {
-                    jniEnv->CallStaticVoidMethod(callback.clazz, callback.method, object, size);
+                if(!allocationCallbackEntered) {
+                    allocationCallbackEntered = true;
+
+                    jclass clazz;
+                    jmethodID method;
+                    {
+                        std::lock_guard<std::mutex> guard(allocCallbackMutex);
+                        method = allocCallbackMethod;
+                        clazz = static_cast<jclass>(jniEnv->NewLocalRef(allocCallbackClass));
+                    }
+
+                    if(method != NULL && clazz != NULL) {
+                        jniEnv->CallStaticVoidMethod(clazz, method, object, size);
+                        if(jniEnv->ExceptionCheck() == JNI_FALSE) { //Should never happen, but required to make JNI happy
+                            jniEnv->ExceptionClear();
+                        }
+                    }
+                    allocationCallbackEntered = false;
                 }
             }
         }
@@ -59,7 +74,11 @@ namespace elastic
                 return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "JavaVM->GetEnv() failed, return code is ", getEnvErr);
             }
 
-            javaAllocationCallback.store({callBackClass, allocationCallbackMethod});
+            {
+                std::lock_guard<std::mutex> guard(allocCallbackMutex);
+                allocCallbackMethod = allocationCallbackMethod;
+                allocCallbackClass = static_cast<jclass>(jniEnv->NewGlobalRef(callBackClass));
+            }
             allocationSamplingEnabled = false;
 
             jvmtiEventCallbacks callbacks = {};
@@ -74,7 +93,12 @@ namespace elastic
 
         ReturnCode destroy(JNIEnv* jniEnv) {
             if(jvmti != nullptr) {
-                javaAllocationCallback.store({});
+                {
+                    std::lock_guard<std::mutex> guard(allocCallbackMutex);
+                    jniEnv->DeleteGlobalRef(allocCallbackClass);
+                    allocCallbackMethod = NULL;
+                    allocCallbackClass = NULL;
+                }
                 auto error = jvmti->DisposeEnvironment();
                 jvmti = nullptr;
                 if(error != JVMTI_ERROR_NONE) {

@@ -18,9 +18,14 @@
  */
 package co.elastic.apm.agent.jvmti;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.annotation.Nullable;
 
 public class JVMTIAgentAccess {
+
+    private static final Logger logger = LoggerFactory.getLogger(JVMTIAgentAccess.class);
 
     public interface JVMTIAllocationCallback {
 
@@ -61,9 +66,16 @@ public class JVMTIAgentAccess {
 
     @SuppressWarnings("unused")
     public static void allocationCallback(Object allocated, long allocSize) {
-        JVMTIAllocationCallback cb = allocationCallback;
-        if (cb != null) {
-            cb.objectAllocated(allocated, allocSize);
+        try {
+            JVMTIAllocationCallback cb = allocationCallback;
+            if (cb != null) {
+                cb.objectAllocated(allocated, allocSize);
+            }
+        } catch (Throwable t) {
+            try {
+                logger.error("Uncaught exception in allocation sampling callback!", t);
+            } catch (Throwable t2) {
+            }
         }
     }
 

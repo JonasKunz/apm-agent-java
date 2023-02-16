@@ -181,7 +181,7 @@ public class JVMTIAgent {
 
     private static void loadNativeLibrary() {
         String libraryDirectory = System.getProperty("java.io.tmpdir");
-        String libraryName = "elastic-jvmti";
+        String libraryName = "elastic-jvmti-darwin-arm64";
         Path file = ResourceExtractionUtil.extractResourceToDirectory("jvmti_agent/" + libraryName + ".so", libraryName, ".so", Paths.get(libraryDirectory));
         System.load(file.toString());
     }

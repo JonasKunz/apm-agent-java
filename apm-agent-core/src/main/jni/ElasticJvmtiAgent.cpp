@@ -32,8 +32,7 @@ namespace elastic
             }
 
             std::mutex allocCallbackMutex;
-            volatile jclass allocCallbackClass;
-            volatile jmethodID allocCallbackMethod;
+            GlobalMethodRef allocCallbackMethod;
 
             thread_local bool allocationCallbackEntered = false;
 
@@ -41,29 +40,42 @@ namespace elastic
                 if(!allocationCallbackEntered) {
                     allocationCallbackEntered = true;
 
-                    jclass clazz;
-                    jmethodID method;
+                    LocalMethodRef javaCallback;
                     {
                         std::lock_guard<std::mutex> guard(allocCallbackMutex);
-                        method = allocCallbackMethod;
-                        clazz = static_cast<jclass>(jniEnv->NewLocalRef(allocCallbackClass));
+                        javaCallback.set(jniEnv, allocCallbackMethod);
+                    }
+                    if(!javaCallback.isEmpty()) {
+                        javaCallback.invokeStaticVoid(jniEnv, object, size);
                     }
 
-                    if(method != NULL && clazz != NULL) {
-                        jniEnv->CallStaticVoidMethod(clazz, method, object, size);
-                        if(jniEnv->ExceptionCheck() == JNI_FALSE) { //Should never happen, but required to make JNI happy
-                            jniEnv->ExceptionClear();
-                        }
-                    }
                     allocationCallbackEntered = false;
                 }
             }
+
+            ReturnCode initJavaMethodRefs(JNIEnv* jniEnv) {
+                LocalMethodRef allocCallback(jniEnv, "co/elastic/apm/agent/jvmti/JVMTIAgentAccess", true, "allocationCallback", "(Ljava/lang/Object;J)V");
+                if(allocCallback.isEmpty()) {
+                    return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Failed to lookup allocationCallback method in JVMTIAgentAccess");
+                }
+
+                std::lock_guard<std::mutex> guard(allocCallbackMutex);
+                allocCallbackMethod.set(jniEnv, allocCallback);
+
+                return ReturnCode::SUCCESS;
+            }
         }
 
-        ReturnCode init(JNIEnv* jniEnv, jclass callBackClass, jmethodID allocationCallbackMethod) {
+        ReturnCode init(JNIEnv* jniEnv) {
             if(jvmti != nullptr) {
                 return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Elastic JVMTI Agent is already initialized!");
             }
+
+            auto methodInitResult = initJavaMethodRefs(jniEnv);
+            if(methodInitResult != ReturnCode::SUCCESS) {
+                return methodInitResult;
+            }
+
             JavaVM* vm;
             auto vmError = jniEnv->GetJavaVM(&vm);
             if(vmError != JNI_OK) {
@@ -74,11 +86,6 @@ namespace elastic
                 return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "JavaVM->GetEnv() failed, return code is ", getEnvErr);
             }
 
-            {
-                std::lock_guard<std::mutex> guard(allocCallbackMutex);
-                allocCallbackMethod = allocationCallbackMethod;
-                allocCallbackClass = static_cast<jclass>(jniEnv->NewGlobalRef(callBackClass));
-            }
             allocationSamplingEnabled = false;
 
             jvmtiEventCallbacks callbacks = {};
@@ -95,9 +102,7 @@ namespace elastic
             if(jvmti != nullptr) {
                 {
                     std::lock_guard<std::mutex> guard(allocCallbackMutex);
-                    jniEnv->DeleteGlobalRef(allocCallbackClass);
-                    allocCallbackMethod = NULL;
-                    allocCallbackClass = NULL;
+                    allocCallbackMethod.clear(jniEnv);
                 }
                 auto error = jvmti->DisposeEnvironment();
                 jvmti = nullptr;

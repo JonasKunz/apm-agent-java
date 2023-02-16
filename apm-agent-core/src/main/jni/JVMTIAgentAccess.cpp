@@ -8,11 +8,7 @@ using elastic::jvmti_agent::toJint;
 using elastic::raiseExceptionAndReturn;
 
 JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_init0(JNIEnv * env, jclass declaringClass) {
-    auto callbackMethod = env->GetStaticMethodID(declaringClass, "allocationCallback", "(Ljava/lang/Object;J)V");
-    if(callbackMethod == NULL) {
-        return toJint(raiseExceptionAndReturn(env, ReturnCode::ERROR, "Failed to lookup allocationCallback method in JVMTIAgentAccess"));
-    }
-    return toJint(elastic::jvmti_agent::init(env, declaringClass, callbackMethod));
+    return toJint(elastic::jvmti_agent::init(env));
 }
 
 

@@ -18,23 +18,30 @@
  */
 package co.elastic.apm.agent.jvmti;
 
+import co.elastic.apm.agent.testutils.ChildFirstCopyClassloader;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.ref.WeakReference;
+import java.time.Duration;
 import java.util.Arrays;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 public class JVMTIAgentTest {
 
     private static final Logger logger = LoggerFactory.getLogger(JVMTIAgentTest.class);
 
-    private static class StackTrace {
+
+    public static class StackTrace {
 
         public StackTrace(long[] buffer, int numFrames) {
             this.buffer = buffer;
@@ -45,30 +52,71 @@ public class JVMTIAgentTest {
         int numFrames;
     }
 
+    public static class StackTracerCreator implements Callable<StackTrace> {
+        @Override
+        public StackTrace call() throws Exception {
+            long[] stackTrace = new long[1000];
+            int numFrames = JVMTIAgent.getStackTrace(0, 1000, false, stackTrace);
+            return new StackTrace(stackTrace, numFrames);
+        }
+    }
+
+    @Nested
+    public class StackTraceTests {
+
+        private StackTrace getStackTraceAfterRecursion(int recursionDepth, int skipFrames, int maxFrames, boolean collectLocations) {
+            if (recursionDepth == 1) {
+                long[] buffer = new long[maxFrames * 2];
+                int numFrames = JVMTIAgent.getStackTrace(skipFrames, maxFrames, collectLocations, buffer);
+                return new StackTrace(buffer, numFrames);
+            } else {
+                return getStackTraceAfterRecursion(recursionDepth - 1, skipFrames, maxFrames, collectLocations);
+            }
+        }
+
+        @Test
+        public void testStackTrace() {
+            StackTrace result = getStackTraceAfterRecursion(5, 0, 200, false);
+            System.out.println(result.numFrames + ", " + Arrays.toString(result.buffer));
+            for (int i = 0; i < result.numFrames; i++) {
+                System.out.print(JVMTIAgent.getDeclaringClass(result.buffer[i]).getName() + " ");
+                System.out.println(JVMTIAgent.getMethodName(result.buffer[i], true));
+            }
+        }
+
+
+        @Test
+        public void testMethodResolutionAfterGC() throws Exception {
+            ClassLoader childLoader = new ChildFirstCopyClassloader(StackTracerCreator.class.getClassLoader(), StackTracerCreator.class.getName());
+            Class<?> creatorClass = childLoader.loadClass(StackTracerCreator.class.getName());
+
+            StackTrace stackTrace = ((Callable<StackTrace>) creatorClass.getConstructor().newInstance()).call();
+
+            assertThat(stackTrace.numFrames).isGreaterThan(0);
+            long methodId = stackTrace.buffer[0];
+            assertThat(JVMTIAgent.getDeclaringClass(methodId)).isSameAs(creatorClass);
+
+            WeakReference<Class<?>> creatorClassWeak = new WeakReference<>(creatorClass);
+            childLoader = null;
+            creatorClass = null;
+
+            await().atMost(Duration.ofSeconds(10)).until(() -> {
+                System.gc();
+                return creatorClassWeak.get() == null;
+            });
+
+            assertThat(JVMTIAgent.getDeclaringClass(methodId)).isNull();
+            assertThat(JVMTIAgent.getMethodName(methodId, true)).isNull();
+            assertThat(JVMTIAgent.getMethodName(methodId, false)).isNull();
+        }
+    }
+
+
     @AfterEach
     void destroy() {
         JVMTIAgent.destroy();
     }
 
-    private static StackTrace getStackTraceAfterRecursion(int recursionDepth, int skipFrames, int maxFrames, boolean collectLocations) {
-        if (recursionDepth == 1) {
-            long[] buffer = new long[maxFrames * 2];
-            int numFrames = JVMTIAgent.getStackTrace(skipFrames, maxFrames, collectLocations, buffer);
-            return new StackTrace(buffer, numFrames);
-        } else {
-            return getStackTraceAfterRecursion(recursionDepth - 1, skipFrames, maxFrames, collectLocations);
-        }
-    }
-
-    @Test
-    public void testStackTrace() {
-        StackTrace result = getStackTraceAfterRecursion(5, 0, 200, false);
-        System.out.println(result.numFrames + ", " + Arrays.toString(result.buffer));
-        for (int i = 0; i < result.numFrames; i++) {
-            System.out.print(JVMTIAgent.getDeclaringClass(result.buffer[i]).getName() + " ");
-            System.out.println(JVMTIAgent.getMethodName(result.buffer[i], true));
-        }
-    }
 
     public static volatile byte[] memorySink;
 

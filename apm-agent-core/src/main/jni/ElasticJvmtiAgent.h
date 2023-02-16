@@ -3,6 +3,7 @@
 
 #include <jvmti.h>
 #include <sstream>
+#include "MethodRef.h"
 
 namespace elastic {
     namespace jvmti_agent {
@@ -21,7 +22,7 @@ namespace elastic {
             return static_cast<jint>(rc);
         }
 
-        ReturnCode init(JNIEnv* jniEnv, jclass callBackClass, jmethodID allocationCallbackMethod);
+        ReturnCode init(JNIEnv* jniEnv);
         ReturnCode destroy(JNIEnv* jniEnv);
 
         ReturnCode getStackTrace(JNIEnv* jniEnv, jint skipFrames, jint maxCollectFrames, bool collectLocations, jlongArray resultBuffer, jint& resultNumFrames);

@@ -47,30 +47,6 @@ JNIEXPORT jclass JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_getDec
 JNIEXPORT jstring JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_getMethodName0
   (JNIEnv *, jclass, jlong, jboolean);
 
-/*
- * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
- * Method:    isAllocationSamplingSupported0
- * Signature: ()Z
- */
-JNIEXPORT jboolean JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_isAllocationSamplingSupported0
-  (JNIEnv *, jclass);
-
-/*
- * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
- * Method:    setAllocationSamplingEnabled0
- * Signature: (ZI)I
- */
-JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setAllocationSamplingEnabled0
-  (JNIEnv *, jclass, jboolean, jint);
-
-/*
- * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
- * Method:    setAllocationSamplingRate0
- * Signature: (I)I
- */
-JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setAllocationSamplingRate0
-  (JNIEnv *, jclass, jint);
-
 #ifdef __cplusplus
 }
 #endif

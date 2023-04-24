@@ -23,19 +23,18 @@ import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
 import co.elastic.apm.agent.impl.context.AbstractContext;
-import co.elastic.apm.agent.objectpool.Recyclable;
 import co.elastic.apm.agent.report.ReporterConfiguration;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import co.elastic.apm.agent.tracer.Outcome;
+import co.elastic.apm.agent.tracer.Scope;
 import co.elastic.apm.agent.tracer.dispatch.BinaryHeaderGetter;
 import co.elastic.apm.agent.tracer.dispatch.BinaryHeaderSetter;
 import co.elastic.apm.agent.tracer.dispatch.HeaderGetter;
 import co.elastic.apm.agent.tracer.dispatch.TextHeaderGetter;
 import co.elastic.apm.agent.tracer.dispatch.TextHeaderSetter;
-import co.elastic.apm.agent.util.LoggerUtils;
-import co.elastic.apm.agent.tracer.Scope;
 import co.elastic.apm.agent.tracer.pooling.Recyclable;
+import co.elastic.apm.agent.util.LoggerUtils;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -61,8 +60,6 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
     protected final ElasticApmTracer tracer;
     protected final AtomicLong timestamp = new AtomicLong();
     protected final AtomicLong endTimestamp = new AtomicLong();
-
-    protected final AtomicLong sampledAllocationBytes = new AtomicLong();
 
     private ChildDurationTimer childDurations = new ChildDurationTimer();
     protected AtomicInteger references = new AtomicInteger();
@@ -460,7 +457,6 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         recycleSpanLinks();
         otelKind = null;
         otelAttributes.clear();
-        sampledAllocationBytes.set(0L);
     }
 
     private void recycleSpanLinks() {
@@ -561,19 +557,10 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         end(traceContext.getClock().getEpochMicros());
     }
 
-    public void addSampledAllocationBytes(long bytes) {
-        sampledAllocationBytes.addAndGet(bytes);
-    }
-
     public final void end(long epochMicros) {
         if (!finished) {
             this.endTimestamp.set(epochMicros);
             childDurations.onSpanEnd(epochMicros);
-
-            long allocBytes = sampledAllocationBytes.get();
-            if (isSampled()) { //TODO: only add sample when allocation profiling is enabled
-                getContext().addLabel("sampled_allocation_bytes", allocBytes);
-            }
 
             type = normalizeType(type);
 

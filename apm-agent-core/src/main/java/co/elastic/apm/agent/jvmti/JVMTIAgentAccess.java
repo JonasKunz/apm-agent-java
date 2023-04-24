@@ -27,25 +27,6 @@ public class JVMTIAgentAccess {
 
     private static final Logger logger = LoggerFactory.getLogger(JVMTIAgentAccess.class);
 
-    public interface JVMTIAllocationCallback {
-
-        /**
-         * Called when a sampled allocation happens.
-         * Called on the thread who is doing the allocation.
-         *
-         * @param object
-         * @param sizeBytes
-         */
-        void objectAllocated(Object object, long sizeBytes);
-
-    }
-
-    private static volatile JVMTIAllocationCallback allocationCallback;
-
-    static void setAllocationCallback(JVMTIAllocationCallback callback) {
-        allocationCallback = callback;
-    }
-
     public static native int init0();
 
     public static native int destroy0();
@@ -57,26 +38,5 @@ public class JVMTIAgentAccess {
 
     @Nullable
     public static native String getMethodName0(long methodId, boolean appendSignature);
-
-    public static native boolean isAllocationSamplingSupported0();
-
-    public static native int setAllocationSamplingEnabled0(boolean enable, int initialSamplingRateBytes);
-
-    public static native int setAllocationSamplingRate0(int samplingRateBytes);
-
-    @SuppressWarnings("unused")
-    public static void allocationCallback(Object allocated, long allocSize) {
-        try {
-            JVMTIAllocationCallback cb = allocationCallback;
-            if (cb != null) {
-                cb.objectAllocated(allocated, allocSize);
-            }
-        } catch (Throwable t) {
-            try {
-                logger.error("Uncaught exception in allocation sampling callback!", t);
-            } catch (Throwable t2) {
-            }
-        }
-    }
 
 }

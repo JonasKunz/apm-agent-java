@@ -98,16 +98,6 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         .tags("added[1.0.0,Changing this value at runtime is possible since version 1.15.0]")
         .buildWithDefault(true);
 
-
-    private final ConfigurationOption<Integer> allocationProfilingRate = ConfigurationOption.integerOption()
-        .key("allocation_profiling_rate")
-        .configurationCategory(CORE_CATEGORY)
-        .description("Sampling rate for allocation profiling in bytes")
-        .dynamic(true)
-        .tags("added[1.37.0]", "experimental")
-        .buildWithDefault(512 * 1024);
-
-
     private final ConfigurationOption<String> serviceName = ConfigurationOption.stringOption()
         .key(SERVICE_NAME)
         .configurationCategory(CORE_CATEGORY)
@@ -1119,10 +1109,6 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
 
     public ActivationMethod getActivationMethod() {
         return activationMethod.get();
-    }
-
-    public ConfigurationOption<Integer> getAllocationProfilingRate() {
-        return allocationProfilingRate;
     }
 
     public enum EventType {

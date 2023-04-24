@@ -76,39 +76,6 @@ public class JVMTIAgent {
         return JVMTIAgentAccess.getMethodName0(methodId, appendSignature);
     }
 
-    public static synchronized void setAllocationSamplingCallback(final AllocationCallback cb) {
-        JVMTIAgentAccess.setAllocationCallback(new JVMTIAgentAccess.JVMTIAllocationCallback() {
-            @Override
-            public void objectAllocated(Object object, long sizeBytes) {
-                cb.objectAllocated(object, allocationSamplingRate, sizeBytes);
-            }
-        });
-    }
-
-    public static synchronized void setAllocationSamplingRate(int samplingRateBytes) {
-        if (allocationSamplingEnabled) {
-            assertInitialized();
-            checkError(JVMTIAgentAccess.setAllocationSamplingRate0(samplingRateBytes));
-        }
-        allocationSamplingRate = samplingRateBytes;
-    }
-
-    public static synchronized void setAllocationProfilingEnabled(boolean enable) {
-        assertInitialized();
-        checkError(JVMTIAgentAccess.setAllocationSamplingEnabled0(enable, allocationSamplingRate));
-        allocationSamplingEnabled = enable;
-    }
-
-    public static synchronized boolean isAllocationProfilingSupported() {
-        try {
-            return checkInitialized() && JVMTIAgentAccess.isAllocationSamplingSupported0();
-        } catch (Throwable t) {
-            logger.error("Error while checking allocation sampling support", t);
-            return false;
-        }
-    }
-
-
     private static void assertInitialized() {
         switch (state) {
             case NOT_LOADED:

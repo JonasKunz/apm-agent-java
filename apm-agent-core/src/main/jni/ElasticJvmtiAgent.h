@@ -3,7 +3,6 @@
 
 #include <jvmti.h>
 #include <sstream>
-#include "MethodRef.h"
 
 namespace elastic {
     namespace jvmti_agent {
@@ -29,9 +28,6 @@ namespace elastic {
         jclass getDeclaringClass(JNIEnv* jniEnv, jlong methodId);
         jstring getMethodName(JNIEnv* jniEnv, jlong methodId, bool appendSignature);
 
-        ReturnCode isAllocationSamplingSupported(JNIEnv* jniEnv, bool& isSupported);
-        ReturnCode setAllocationSamplingEnabled(JNIEnv* jniEnv, bool enable, jint initialSampleRate);
-        ReturnCode setAllocationSamplingRate(JNIEnv* jniEnv, jint samplingRateBytes);
     }
 
     template< class... Args >

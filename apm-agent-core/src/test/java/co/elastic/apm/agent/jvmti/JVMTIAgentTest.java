@@ -22,8 +22,6 @@ import co.elastic.apm.agent.testutils.ChildFirstCopyClassloader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +29,6 @@ import java.lang.ref.WeakReference;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -117,40 +114,4 @@ public class JVMTIAgentTest {
         JVMTIAgent.destroy();
     }
 
-
-    public static volatile byte[] memorySink;
-
-    @ParameterizedTest
-    @ValueSource(ints = {1024, 4096, 512 * 1024})
-    public void testAllocationSampling(int rate) {
-        Thread currentThread = Thread.currentThread();
-
-        AtomicLong samplesOnCurrentThreadRef = new AtomicLong(0L);
-        AtomicLong smallestSizeRef = new AtomicLong(Long.MAX_VALUE);
-
-        JVMTIAgent.setAllocationProfilingEnabled(true);
-        JVMTIAgent.setAllocationSamplingRate(rate);
-        JVMTIAgent.setAllocationSamplingCallback((object, samplingRate, size) -> {
-            if (Thread.currentThread() == currentThread) {
-                samplesOnCurrentThreadRef.incrementAndGet();
-                if (smallestSizeRef.get() > size) {
-                    smallestSizeRef.set(size);
-                }
-            }
-        });
-
-        long kbsToAllocate = 512 * 1024;
-        for (long i = 0; i < kbsToAllocate; i++) {
-            memorySink = new byte[1024];
-        }
-
-        long smallestSize = smallestSizeRef.get();
-        long samplesOnCurrentThread = samplesOnCurrentThreadRef.get();
-
-        double expectedSamples = kbsToAllocate * 1024.0 / rate;
-        assertThat(samplesOnCurrentThread).isBetween(Math.round(expectedSamples * 0.5), Math.round(expectedSamples * 2));
-        assertThat(smallestSize).isBetween(1024L, 2048L);
-
-        JVMTIAgent.setAllocationProfilingEnabled(false);
-    }
 }

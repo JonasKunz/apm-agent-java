@@ -10,8 +10,6 @@ namespace elastic
     {
 
         static jvmtiEnv* jvmti;
-        static bool allocationSamplingEnabled;
-
 
         namespace {
 
@@ -30,50 +28,11 @@ namespace elastic
                 std::memcpy(&result, &value, sizeof(T));
                 return result;
             }
-
-            std::mutex allocCallbackMutex;
-            GlobalMethodRef allocCallbackMethod;
-
-            thread_local bool allocationCallbackEntered = false;
-
-            void JNICALL allocationCallback(jvmtiEnv *jvmti_env, JNIEnv* jniEnv, jthread thread, jobject object, jclass object_klass, jlong size) {
-                if(!allocationCallbackEntered) {
-                    allocationCallbackEntered = true;
-
-                    LocalMethodRef javaCallback;
-                    {
-                        std::lock_guard<std::mutex> guard(allocCallbackMutex);
-                        javaCallback.set(jniEnv, allocCallbackMethod);
-                    }
-                    if(!javaCallback.isEmpty()) {
-                        javaCallback.invokeStaticVoid(jniEnv, object, size);
-                    }
-
-                    allocationCallbackEntered = false;
-                }
-            }
-
-            ReturnCode initJavaMethodRefs(JNIEnv* jniEnv) {
-                LocalMethodRef allocCallback(jniEnv, "co/elastic/apm/agent/jvmti/JVMTIAgentAccess", true, "allocationCallback", "(Ljava/lang/Object;J)V");
-                if(allocCallback.isEmpty()) {
-                    return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Failed to lookup allocationCallback method in JVMTIAgentAccess");
-                }
-
-                std::lock_guard<std::mutex> guard(allocCallbackMutex);
-                allocCallbackMethod.set(jniEnv, allocCallback);
-
-                return ReturnCode::SUCCESS;
-            }
         }
 
         ReturnCode init(JNIEnv* jniEnv) {
             if(jvmti != nullptr) {
                 return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Elastic JVMTI Agent is already initialized!");
-            }
-
-            auto methodInitResult = initJavaMethodRefs(jniEnv);
-            if(methodInitResult != ReturnCode::SUCCESS) {
-                return methodInitResult;
             }
 
             JavaVM* vm;
@@ -86,24 +45,11 @@ namespace elastic
                 return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "JavaVM->GetEnv() failed, return code is ", getEnvErr);
             }
 
-            allocationSamplingEnabled = false;
-
-            jvmtiEventCallbacks callbacks = {};
-            callbacks.SampledObjectAlloc = &allocationCallback;
-            auto callbackError = jvmti->SetEventCallbacks(&callbacks, sizeof(jvmtiEventCallbacks));
-            if (callbackError != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->SetEventCallbacks() failed, return code is ", callbackError);
-            }
-
             return ReturnCode::SUCCESS;
         }
 
         ReturnCode destroy(JNIEnv* jniEnv) {
             if(jvmti != nullptr) {
-                {
-                    std::lock_guard<std::mutex> guard(allocCallbackMutex);
-                    allocCallbackMethod.clear(jniEnv);
-                }
                 auto error = jvmti->DisposeEnvironment();
                 jvmti = nullptr;
                 if(error != JVMTI_ERROR_NONE) {
@@ -212,105 +158,6 @@ namespace elastic
             
             return resultStr;
         }
-
-        ReturnCode isAllocationSamplingSupported(JNIEnv* jniEnv, bool& isSupported) {
-            if(jvmti == nullptr) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR_NOT_INITIALIZED, "Elastic JVMTI Agent has not been initialized");
-            }
-            jvmtiCapabilities caps{};
-            auto error = jvmti->GetPotentialCapabilities(&caps);
-            if (error != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->GetPotentialCapabilities() failed, return code is ", error);
-            }
-            isSupported = caps.can_generate_sampled_object_alloc_events != 0;
-            return ReturnCode::SUCCESS;
-        }
-
-        ReturnCode disableAllocationSampling(JNIEnv* jniEnv) {
-            
-            auto error = jvmti->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_SAMPLED_OBJECT_ALLOC, NULL);
-            if (error != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->SetEventNotificationMode() failed for JVMTI_EVENT_SAMPLED_OBJECT_ALLOC, return code is ", error);
-            }
-            jvmtiCapabilities caps = {};
-            caps.can_generate_sampled_object_alloc_events = 1;
-            error = jvmti->RelinquishCapabilities(&caps);
-            if (error != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->RelinquishCapabilities() failed for allocation sampling capability, return code is ", error);
-            }
-
-            return ReturnCode::SUCCESS;
-        }
-
-        ReturnCode enableAllocationSampling(JNIEnv* jniEnv, jint samplingRateBytes) {
-            bool isSupported;
-            auto retCode = isAllocationSamplingSupported(jniEnv, isSupported);
-            if(retCode != ReturnCode::SUCCESS) {
-                return retCode;
-            }
-            if (!isSupported) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR_NOT_INITIALIZED, "JVMTI does not allow enabling allocation sampling capability!");
-            }
-
-            jvmtiCapabilities caps = {};
-            caps.can_generate_sampled_object_alloc_events = 1;
-            auto error = jvmti->AddCapabilities(&caps);
-            if (error != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->AddCapabilities() failed for allocation sampling capability, return code is ", error);
-            }
-
-            error = jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_SAMPLED_OBJECT_ALLOC, NULL);
-            if (error != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->SetEventNotificationMode() failed for JVMTI_EVENT_SAMPLED_OBJECT_ALLOC, return code is ", error);
-            }
-
-            error = jvmti->SetHeapSamplingInterval(samplingRateBytes);
-            if (error != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->SetHeapSamplingInterval() failed for sampling rate ", samplingRateBytes, ", return code is ", error);
-            }
-            
-            return ReturnCode::SUCCESS;
-        }
-
-        ReturnCode setAllocationSamplingEnabled(JNIEnv* jniEnv, bool enable, jint initialSampleRate) {
-            if(jvmti == nullptr) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR_NOT_INITIALIZED, "Elastic JVMTI Agent has not been initialized");
-            }
-            if(enable == allocationSamplingEnabled) {
-                return ReturnCode::SUCCESS;
-            }
-
-            ReturnCode result;
-
-            if(enable) {
-                result = enableAllocationSampling(jniEnv, initialSampleRate);
-            } else {
-                result = disableAllocationSampling(jniEnv);
-            }
-
-            if(result == ReturnCode::SUCCESS) {
-                allocationSamplingEnabled = enable;
-            }
-            return result;            
-        }
-
-
-        ReturnCode setAllocationSamplingRate(JNIEnv* jniEnv, jint samplingRateBytes) {
-            if(jvmti == nullptr) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR_NOT_INITIALIZED, "Elastic JVMTI Agent has not been initialized");
-            }
-            if(!allocationSamplingEnabled) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Allocation sampling has not been enabled yet!");
-            }
-
-            auto error = jvmti->SetHeapSamplingInterval(samplingRateBytes);
-            if (error != JVMTI_ERROR_NONE) {
-                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->SetHeapSamplingInterval() failed for sampling rate ", samplingRateBytes, ", return code is ", error);
-            }
-            
-            return ReturnCode::SUCCESS;
-        }
-        
 
     } // namespace jvmti_agent
     

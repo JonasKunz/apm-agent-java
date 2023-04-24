@@ -34,17 +34,3 @@ JNIEXPORT jstring JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_getMe
     return elastic::jvmti_agent::getMethodName(env, methodId, appendSignature);
 }
 
-JNIEXPORT jboolean JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_isAllocationSamplingSupported0(JNIEnv * env, jclass) {
-    bool supported;
-    if(ReturnCode::SUCCESS != elastic::jvmti_agent::isAllocationSamplingSupported(env, supported)) {
-        return false;
-    }
-    return supported;
-}
-
-JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setAllocationSamplingEnabled0(JNIEnv * env, jclass, jboolean enable, jint initialSampleRate) {
-    return toJint(elastic::jvmti_agent::setAllocationSamplingEnabled(env, enable, initialSampleRate));
-}
-JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setAllocationSamplingRate0(JNIEnv * env, jclass, jint samplingRate) {
-    return toJint(elastic::jvmti_agent::setAllocationSamplingRate(env, samplingRate));
-}

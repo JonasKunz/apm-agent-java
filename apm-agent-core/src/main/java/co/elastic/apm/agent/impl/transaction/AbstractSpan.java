@@ -22,13 +22,20 @@ import co.elastic.apm.agent.collections.LongList;
 import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
-import co.elastic.apm.agent.impl.Scope;
 import co.elastic.apm.agent.impl.context.AbstractContext;
 import co.elastic.apm.agent.objectpool.Recyclable;
 import co.elastic.apm.agent.report.ReporterConfiguration;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
+import co.elastic.apm.agent.tracer.Outcome;
+import co.elastic.apm.agent.tracer.dispatch.BinaryHeaderGetter;
+import co.elastic.apm.agent.tracer.dispatch.BinaryHeaderSetter;
+import co.elastic.apm.agent.tracer.dispatch.HeaderGetter;
+import co.elastic.apm.agent.tracer.dispatch.TextHeaderGetter;
+import co.elastic.apm.agent.tracer.dispatch.TextHeaderSetter;
 import co.elastic.apm.agent.util.LoggerUtils;
+import co.elastic.apm.agent.tracer.Scope;
+import co.elastic.apm.agent.tracer.pooling.Recyclable;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -38,12 +45,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recyclable, ElasticContext<T> {
-    public static final int PRIO_USER_SUPPLIED = 1000;
-    public static final int PRIO_HIGH_LEVEL_FRAMEWORK = 100;
-    public static final int PRIO_METHOD_SIGNATURE = 100;
-    public static final int PRIO_LOW_LEVEL_FRAMEWORK = 10;
-    public static final int PRIO_DEFAULT = 0;
+public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recyclable, ElasticContext<T>, co.elastic.apm.agent.tracer.AbstractSpan<T> {
     private static final Logger logger = LoggerFactory.getLogger(AbstractSpan.class);
     private static final Logger oneTimeDuplicatedEndLogger = LoggerUtils.logOnce(logger);
     private static final Logger oneTimeMaxSpanLinksLogger = LoggerUtils.logOnce(logger);
@@ -65,7 +67,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
     private ChildDurationTimer childDurations = new ChildDurationTimer();
     protected AtomicInteger references = new AtomicInteger();
     protected volatile boolean finished = true;
-    private int namePriority = PRIO_DEFAULT;
+    private int namePriority = PRIORITY_DEFAULT;
     private boolean discardRequested = false;
     /**
      * Flag to mark a span as representing an exit event
@@ -133,26 +135,13 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return references.get();
     }
 
-    /**
-     * Requests this span to be discarded, even if it's sampled.
-     * <p>
-     * Whether the span can actually be discarded is determined by {@link #isDiscarded()}
-     * </p>
-     */
+    @Override
     public T requestDiscarding() {
         this.discardRequested = true;
-        return (T) this;
+        return thiz();
     }
 
-    /**
-     * Determines whether to discard the span.
-     * Only spans that return {@code false} are reported.
-     * <p>
-     * A span is discarded if it {@linkplain #isDiscardable() is discardable} and {@linkplain #requestDiscarding() requested to be discarded}.
-     * </p>
-     *
-     * @return {@code true}, if the span should be discarded, {@code false} otherwise.
-     */
+    @Override
     public boolean isDiscarded() {
         return discardRequested && getTraceContext().isDiscardable();
     }
@@ -224,6 +213,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return references.get() > 0;
     }
 
+    @Override
     public boolean isFinished() {
         return finished;
     }
@@ -254,30 +244,13 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         }
     }
 
-    /**
-     * Resets and returns the name {@link StringBuilder} if the provided priority is {@code >=} {@link #namePriority}.
-     * Otherwise, returns {@code null}
-     *
-     * @param namePriority the priority for the name. See also the {@code AbstractSpan#PRIO_*} constants.
-     * @return the name {@link StringBuilder} if the provided priority is {@code >=} {@link #namePriority}, {@code null} otherwise.
-     */
+    @Override
     @Nullable
     public StringBuilder getAndOverrideName(int namePriority) {
         return getAndOverrideName(namePriority, true);
     }
 
-    /**
-     * Resets and returns the name {@link StringBuilder} if one of the following applies:
-     * <ul>
-     *      <li>the provided priority is {@code >} {@link #namePriority}</li>
-     *      <li>the provided priority is {@code ==} {@link #namePriority} AND {@code overrideIfSamePriority} is {@code true}</li>
-     * </ul>
-     * Otherwise, returns {@code null}
-     *
-     * @param namePriority           the priority for the name. See also the {@code AbstractSpan#PRIO_*} constants.
-     * @param overrideIfSamePriority specifies whether the existing name should be overridden if {@code namePriority} equals the priority used to set the current name
-     * @return the name {@link StringBuilder} if the provided priority is sufficient for overriding, {@code null} otherwise.
-     */
+    @Override
     @Nullable
     public StringBuilder getAndOverrideName(int namePriority, boolean overrideIfSamePriority) {
         boolean shouldOverride = (overrideIfSamePriority) ? namePriority >= this.namePriority : namePriority > this.namePriority;
@@ -297,7 +270,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
      * @param methodName the method that should be part of this span's name
      */
     public void updateName(Class<?> clazz, String methodName) {
-        StringBuilder spanName = getAndOverrideName(PRIO_DEFAULT);
+        StringBuilder spanName = getAndOverrideName(PRIORITY_DEFAULT);
         if (spanName != null) {
             String className = clazz.getName();
             spanName.append(className, className.lastIndexOf('.') + 1, className.length());
@@ -314,24 +287,17 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return getNameForSerialization().toString();
     }
 
-    /**
-     * Appends a string to the name.
-     * <p>
-     * This method helps to avoid the memory allocations of string concatenations
-     * as the underlying {@link StringBuilder} instance will be reused.
-     * </p>
-     *
-     * @param cs the char sequence to append to the name
-     * @return {@code this}, for chaining
-     */
+    @Override
     public T appendToName(CharSequence cs) {
-        return appendToName(cs, PRIO_DEFAULT);
+        return appendToName(cs, PRIORITY_DEFAULT);
     }
 
+    @Override
     public T appendToName(CharSequence cs, int priority) {
         return appendToName(cs, priority, 0, cs.length());
     }
 
+    @Override
     public T appendToName(CharSequence cs, int priority, int startIndex, int endIndex) {
         if (priority >= namePriority) {
             this.name.append(cs, startIndex, endIndex);
@@ -340,14 +306,17 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return thiz();
     }
 
+    @Override
     public T withName(@Nullable String name) {
-        return withName(name, PRIO_DEFAULT);
+        return withName(name, PRIORITY_DEFAULT);
     }
 
+    @Override
     public T withName(@Nullable String name, int priority) {
         return withName(name, priority, true);
     }
 
+    @Override
     public T withName(@Nullable String name, int priority, boolean overrideIfSamePriority) {
         boolean shouldOverride = (overrideIfSamePriority) ? priority >= this.namePriority : priority > this.namePriority;
         if (shouldOverride && name != null && !name.isEmpty()) {
@@ -358,11 +327,13 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return thiz();
     }
 
+    @Override
     public T withType(@Nullable String type) {
         this.type = normalizeEmpty(type);
         return thiz();
     }
 
+    @Override
     public T withSync(boolean sync) {
         this.sync = sync;
         return thiz();
@@ -380,6 +351,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return timestamp.get();
     }
 
+    @Override
     public TraceContext getTraceContext() {
         return traceContext;
     }
@@ -477,7 +449,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         traceContext.resetState();
         childDurations.resetState();
         references.set(0);
-        namePriority = PRIO_DEFAULT;
+        namePriority = PRIORITY_DEFAULT;
         discardRequested = false;
         isExit = false;
         childIds = null;
@@ -499,6 +471,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         spanLinks.clear();
     }
 
+    @Override
     public Span createSpan() {
         return createSpan(traceContext.getClock().getEpochMicros());
     }
@@ -507,12 +480,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return tracer.startSpan(this, epochMicros);
     }
 
-    /**
-     * Creates a child Span representing a remote call event, unless this TraceContextHolder already represents an exit event.
-     * If current TraceContextHolder is representing an Exit- returns null
-     *
-     * @return an Exit span if this TraceContextHolder is not an exit span, null otherwise
-     */
+    @Override
     @Nullable
     public Span createExitSpan() {
         if (isExit()) {
@@ -524,7 +492,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
 
     public T asExit() {
         isExit = true;
-        return (T) this;
+        return thiz();
     }
 
     public boolean isExit() {
@@ -540,11 +508,12 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return null;
     }
 
+    @Override
     public T captureException(@Nullable Throwable t) {
         if (t != null) {
             captureExceptionAndGetErrorId(getTraceContext().getClock().getEpochMicros(), t);
         }
-        return (T) this;
+        return thiz();
     }
 
     public void endExceptionally(@Nullable Throwable t) {
@@ -574,6 +543,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         }
     }
 
+    @Override
     public abstract AbstractContext getContext();
 
     /**
@@ -586,6 +556,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         incrementReferences();
     }
 
+    @Override
     public void end() {
         end(traceContext.getClock().getEpochMicros());
     }
@@ -662,13 +633,13 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
     @Override
     public T activate() {
         tracer.activate(this);
-        return (T) this;
+        return thiz();
     }
 
     @Override
     public T deactivate() {
         tracer.deactivate(this);
-        return (T) this;
+        return thiz();
     }
 
     @Override
@@ -704,6 +675,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         }
     }
 
+    @Override
     public void incrementReferences() {
         int referenceCount = references.incrementAndGet();
         if (logger.isDebugEnabled()) {
@@ -715,6 +687,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         }
     }
 
+    @Override
     public void decrementReferences() {
         int referenceCount = references.decrementAndGet();
         if (logger.isDebugEnabled()) {
@@ -731,38 +704,21 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
 
     protected abstract void recycle();
 
-    /**
-     * Sets Trace context text headers, using this context as parent, on the provided carrier using the provided setter
-     *
-     * @param carrier      the text headers carrier
-     * @param headerSetter a setter implementing the actual addition of headers to the headers carrier
-     * @param <C>          the header carrier type, for example - an HTTP request
-     */
+    @Override
     public <C> void propagateTraceContext(C carrier, TextHeaderSetter<C> headerSetter) {
         // the context of this span is propagated downstream so we can't discard it even if it's faster than span_min_duration
         setNonDiscardable();
         getTraceContext().propagateTraceContext(carrier, headerSetter);
     }
 
-    /**
-     * Sets Trace context binary headers, using this context as parent, on the provided carrier using the provided setter
-     *
-     * @param carrier      the binary headers carrier
-     * @param headerSetter a setter implementing the actual addition of headers to the headers carrier
-     * @param <C>          the header carrier type, for example - a Kafka record
-     * @return true if Trace Context headers were set; false otherwise
-     */
+    @Override
     public <C> boolean propagateTraceContext(C carrier, BinaryHeaderSetter<C> headerSetter) {
         // the context of this span is propagated downstream so we can't discard it even if it's faster than span_min_duration
         setNonDiscardable();
         return getTraceContext().propagateTraceContext(carrier, headerSetter);
     }
 
-    /**
-     * Sets this context as non-discardable,
-     * meaning that {@link AbstractSpan#isDiscarded()} will return {@code false},
-     * even if {@link AbstractSpan#requestDiscarding()} has been called.
-     */
+    @Override
     public void setNonDiscardable() {
         getTraceContext().setNonDiscardable();
     }
@@ -776,6 +732,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return getTraceContext().isDiscardable();
     }
 
+    @Override
     public boolean isSampled() {
         return getTraceContext().isSampled();
     }
@@ -792,9 +749,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
 
     protected abstract T thiz();
 
-    /**
-     * @return user outcome if set, otherwise outcome value
-     */
+    @Override
     public Outcome getOutcome() {
         if (userOutcome != null) {
             return userOutcome;
@@ -802,12 +757,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return outcome != null ? outcome : Outcome.UNKNOWN;
     }
 
-    /**
-     * Sets outcome
-     *
-     * @param outcome outcome
-     * @return this
-     */
+    @Override
     public T withOutcome(Outcome outcome) {
         this.outcome = outcome;
         return thiz();
@@ -850,6 +800,7 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return otelAttributes;
     }
 
+    @Override
     @Nullable
     public String getType() {
         return type;
@@ -866,4 +817,17 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         return type;
     }
 
+    @Override
+    public <C> boolean addLink(BinaryHeaderGetter<C> headerGetter, @Nullable C carrier) {
+        return addSpanLink(TraceContext.<C>getFromTraceContextBinaryHeaders(),
+            headerGetter,
+            carrier);
+    }
+
+    @Override
+    public <C> boolean addLink(TextHeaderGetter<C> headerGetter, @Nullable C carrier) {
+        return addSpanLink(TraceContext.<C>getFromTraceContextTextHeaders(),
+            headerGetter,
+            carrier);
+    }
 }

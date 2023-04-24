@@ -18,13 +18,13 @@
  */
 package co.elastic.apm.agent;
 
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.configuration.SpyConfiguration;
 import co.elastic.apm.agent.impl.context.Destination;
 import co.elastic.apm.agent.impl.error.ErrorCapture;
 import co.elastic.apm.agent.impl.metadata.MetaData;
 import co.elastic.apm.agent.impl.stacktrace.StacktraceConfiguration;
 import co.elastic.apm.agent.impl.transaction.AbstractSpan;
-import co.elastic.apm.agent.impl.transaction.Outcome;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.report.ApmServerClient;
@@ -33,6 +33,8 @@ import co.elastic.apm.agent.report.Reporter;
 import co.elastic.apm.agent.report.ReporterMonitor;
 import co.elastic.apm.agent.report.ReportingEvent;
 import co.elastic.apm.agent.report.serialize.DslJsonSerializer;
+import co.elastic.apm.agent.report.serialize.SerializationConstants;
+import co.elastic.apm.agent.tracer.Outcome;
 import com.dslplatform.json.JsonWriter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -359,7 +361,7 @@ public class MockReporter implements Reporter {
         verifyJsonSchema(jsonNode, SchemaInstance.CURRENT.errorSchema, SchemaInstance.CURRENT.errorSchemaPath);
     }
 
-    private void verifyJsonSchemas(Function<DslJsonSerializer, String> serializerFunction,
+    private void verifyJsonSchemas(Function<DslJsonSerializer.Writer, String> serializerFunction,
                                    Function<SchemaInstance, JsonSchema> schemaFunction,
                                    Function<SchemaInstance, String> schemaPathFunction) {
         if (!verifyJsonSchema) {
@@ -747,7 +749,7 @@ public class MockReporter implements Reporter {
             "/apm-server-schema/v6_5/errors/error.json",
             false);
 
-        private final DslJsonSerializer serializer;
+        private final DslJsonSerializer.Writer serializer;
         private final JsonSchema transactionSchema;
         private final String transactionSchemaPath;
         private final JsonSchema spanSchema;
@@ -775,7 +777,8 @@ public class MockReporter implements Reporter {
             doReturn(isLatest).when(client).supportsNonStringLabels();
             doReturn(isLatest).when(client).supportsLogsEndpoint();
 
-            this.serializer = new DslJsonSerializer(stacktraceConfiguration, client, metaData);
+            SerializationConstants.init(spyConfig.getConfig(CoreConfiguration.class));
+            this.serializer = new DslJsonSerializer(stacktraceConfiguration, client, metaData).newWriter();
         }
 
         private static JsonSchema getSchema(String resource) {

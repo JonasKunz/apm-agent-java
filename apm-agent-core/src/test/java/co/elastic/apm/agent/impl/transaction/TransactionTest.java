@@ -25,6 +25,7 @@ import co.elastic.apm.agent.impl.sampling.ConstantSampler;
 import co.elastic.apm.agent.impl.stacktrace.StacktraceConfiguration;
 import co.elastic.apm.agent.report.ApmServerClient;
 import co.elastic.apm.agent.report.serialize.DslJsonSerializer;
+import co.elastic.apm.agent.tracer.Outcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -39,7 +40,7 @@ import static org.mockito.Mockito.mock;
 
 public class TransactionTest {
 
-    private DslJsonSerializer jsonSerializer;
+    private DslJsonSerializer.Writer jsonSerializer;
 
     @BeforeEach
     void setUp() {
@@ -47,7 +48,7 @@ public class TransactionTest {
             mock(StacktraceConfiguration.class),
             mock(ApmServerClient.class),
             MetaDataMock.create()
-        );
+        ).newWriter();
     }
 
     @Test

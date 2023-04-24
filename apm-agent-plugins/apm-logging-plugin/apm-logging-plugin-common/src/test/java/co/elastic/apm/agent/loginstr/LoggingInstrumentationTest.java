@@ -68,6 +68,7 @@ public abstract class LoggingInstrumentationTest extends AbstractInstrumentation
 
     private static final String SERVICE_NODE_NAME = "my-service-node";
     private static final Map<String, String> ADDITIONAL_FIELDS = Map.of("some.field", "some-value", "another.field", "another-value");
+    private static final String ENVIRONMENT = "my-env";
 
     private final LoggerFacade logger;
     private final ObjectMapper objectMapper;
@@ -91,6 +92,7 @@ public abstract class LoggingInstrumentationTest extends AbstractInstrumentation
     @BeforeEach
     public void setup() throws Exception {
         doReturn(SERVICE_VERSION).when(config.getConfig(CoreConfiguration.class)).getServiceVersion();
+        doReturn(ENVIRONMENT).when(config.getConfig(CoreConfiguration.class)).getEnvironment();
         doReturn(SERVICE_NODE_NAME).when(config.getConfig(CoreConfiguration.class)).getServiceNodeName();
 
         loggingConfig = config.getConfig(LoggingConfiguration.class);
@@ -124,6 +126,10 @@ public abstract class LoggingInstrumentationTest extends AbstractInstrumentation
     }
 
     protected abstract LoggerFacade createLoggerFacade();
+
+    protected boolean logsThreadName() {
+        return true;
+    }
 
     @Test
     public void testSimpleLogReformatting() throws Exception {
@@ -315,8 +321,9 @@ public abstract class LoggingInstrumentationTest extends AbstractInstrumentation
     }
 
     private void verifyEcsLogLine(JsonNode ecsLogLineTree) {
+        String currentThreadName = Thread.currentThread().getName();
         assertThat(ecsLogLineTree.get("@timestamp")).isNotNull();
-        assertThat(ecsLogLineTree.get("process.thread.name").textValue()).isEqualTo("main");
+        assertThat(ecsLogLineTree.get("process.thread.name").textValue()).isEqualTo(currentThreadName);
         JsonNode logLevel = ecsLogLineTree.get("log.level");
         assertThat(logLevel).isNotNull();
         boolean isErrorLine = logLevel.textValue().equalsIgnoreCase("error");
@@ -337,7 +344,8 @@ public abstract class LoggingInstrumentationTest extends AbstractInstrumentation
         assertThat(ecsLogLineTree.get("service.name").textValue()).isEqualTo(serviceName);
         assertThat(ecsLogLineTree.get("service.node.name").textValue()).isEqualTo(SERVICE_NODE_NAME);
         assertThat(ecsLogLineTree.get("event.dataset").textValue()).isEqualTo(serviceName + ".FILE");
-        assertThat(ecsLogLineTree.get("service.version").textValue()).isEqualTo("v42");
+        assertThat(ecsLogLineTree.get("service.version").textValue()).isEqualTo(SERVICE_VERSION);
+        assertThat(ecsLogLineTree.get("service.environment").textValue()).isEqualTo(ENVIRONMENT);
         assertThat(ecsLogLineTree.get("some.field").textValue()).isEqualTo("some-value");
         assertThat(ecsLogLineTree.get("another.field").textValue()).isEqualTo("another-value");
     }
@@ -394,7 +402,12 @@ public abstract class LoggingInstrumentationTest extends AbstractInstrumentation
         Date rawTimestamp = timestampFormat.parse(splitRawLogLine[0]);
         Date ecsTimestamp = utcTimestampFormat.parse(ecsLogLineTree.get("@timestamp").textValue());
         assertThat(rawTimestamp).isEqualTo(ecsTimestamp);
-        assertThat(splitRawLogLine[1]).isEqualTo(ecsLogLineTree.get("process.thread.name").textValue());
+        if (logsThreadName()) {
+            // JUL simple formatter doesn't have the capability to log the thread name
+            // we've faked it with a 'main' in the format, but that no longer works
+            // with parallelized unit tests (where the thread is a pool thread)
+            assertThat(splitRawLogLine[1]).isEqualTo(ecsLogLineTree.get("process.thread.name").textValue());
+        }
         JsonNode logLevel = ecsLogLineTree.get("log.level");
         assertThat(splitRawLogLine[2]).isEqualTo(logLevel.textValue());
         boolean isErrorLine = logLevel.textValue().equalsIgnoreCase("error");

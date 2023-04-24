@@ -21,12 +21,12 @@ package co.elastic.apm.agent.awssdk.v1.helper;
 import co.elastic.apm.agent.awssdk.common.AbstractSQSInstrumentationHelper;
 import co.elastic.apm.agent.awssdk.v1.helper.sqs.wrapper.ReceiveMessageResultWrapper;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
-import co.elastic.apm.agent.impl.ElasticApmTracer;
-import co.elastic.apm.agent.impl.GlobalTracer;
-import co.elastic.apm.agent.impl.transaction.Span;
-import co.elastic.apm.agent.impl.transaction.TextHeaderSetter;
-import co.elastic.apm.agent.impl.transaction.TraceContext;
+import co.elastic.apm.agent.tracer.AbstractSpan;
+import co.elastic.apm.agent.tracer.GlobalTracer;
+import co.elastic.apm.agent.tracer.Span;
 import co.elastic.apm.agent.common.util.WildcardMatcher;
+import co.elastic.apm.agent.tracer.Tracer;
+import co.elastic.apm.agent.tracer.dispatch.TextHeaderSetter;
 import com.amazonaws.AmazonWebServiceRequest;
 import com.amazonaws.Request;
 import com.amazonaws.http.ExecutionContext;
@@ -46,18 +46,18 @@ import java.util.Map;
 
 public class SQSHelper extends AbstractSQSInstrumentationHelper<Request<?>, ExecutionContext, Message> implements TextHeaderSetter<Map<String, MessageAttributeValue>> {
 
-    private static final SQSHelper INSTANCE = new SQSHelper(GlobalTracer.requireTracerImpl());
+    private static final SQSHelper INSTANCE = new SQSHelper(GlobalTracer.get());
 
     public static SQSHelper getInstance() {
         return INSTANCE;
     }
 
-    protected SQSHelper(ElasticApmTracer tracer) {
+    protected SQSHelper(Tracer tracer) {
         super(tracer, SdkV1DataSource.getInstance());
     }
 
 
-    public void propagateContext(Span span, AmazonWebServiceRequest request) {
+    public void propagateContext(Span<?> span, AmazonWebServiceRequest request) {
         if (request instanceof SendMessageRequest) {
             SendMessageRequest sendMessageRequest = (SendMessageRequest) request;
             span.propagateTraceContext(sendMessageRequest.getMessageAttributes(), this);
@@ -71,12 +71,10 @@ public class SQSHelper extends AbstractSQSInstrumentationHelper<Request<?>, Exec
 
     public void setMessageAttributeNames(ReceiveMessageRequest receiveMessageRequest) {
         List<String> messageAttributeNames = receiveMessageRequest.getMessageAttributeNames();
-        if (!messageAttributeNames.contains(ATTRIBUTE_NAME_ALL) && !messageAttributeNames.contains(TraceContext.W3C_TRACE_PARENT_TEXTUAL_HEADER_NAME)) {
-            messageAttributeNames.add(TraceContext.W3C_TRACE_PARENT_TEXTUAL_HEADER_NAME);
-        }
-
-        if (!messageAttributeNames.contains(ATTRIBUTE_NAME_ALL) && !messageAttributeNames.contains(TraceContext.TRACESTATE_HEADER_NAME)) {
-            messageAttributeNames.add(TraceContext.TRACESTATE_HEADER_NAME);
+        for (String header : tracer.getTraceHeaderNames()) {
+            if (!messageAttributeNames.contains(ATTRIBUTE_NAME_ALL) && !messageAttributeNames.contains(header)) {
+                messageAttributeNames.add(header);
+            }
         }
 
         List<String> attributeNames = receiveMessageRequest.getAttributeNames();
@@ -127,7 +125,7 @@ public class SQSHelper extends AbstractSQSInstrumentationHelper<Request<?>, Exec
     }
 
     @Override
-    protected void setMessageContext(@Nullable Message sqsMessage, @Nullable String queueName, co.elastic.apm.agent.impl.context.Message message) {
+    protected void setMessageContext(@Nullable Message sqsMessage, @Nullable String queueName, co.elastic.apm.agent.tracer.metadata.Message message) {
         if (queueName != null) {
             message.withQueue(queueName);
         }
@@ -141,8 +139,7 @@ public class SQSHelper extends AbstractSQSInstrumentationHelper<Request<?>, Exec
             if (coreConfiguration.isCaptureHeaders()) {
                 for (Map.Entry<String, MessageAttributeValue> entry : sqsMessage.getMessageAttributes().entrySet()) {
                     String key = entry.getKey();
-                    if (!TraceContext.W3C_TRACE_PARENT_TEXTUAL_HEADER_NAME.equals(key) &&
-                        !TraceContext.TRACESTATE_HEADER_NAME.equals(key) &&
+                    if (!tracer.getTraceHeaderNames().contains(key) &&
                         entry.getValue().getDataType().equals(ATTRIBUTE_DATA_TYPE_STRING) &&
                         WildcardMatcher.anyMatch(coreConfiguration.getSanitizeFieldNames(), key) == null) {
                         message.addHeader(key, entry.getValue().getStringValue());
@@ -164,15 +161,18 @@ public class SQSHelper extends AbstractSQSInstrumentationHelper<Request<?>, Exec
      */
     @Nullable
     @Override
-    public Span startSpan(Request<?> request, URI httpURI, ExecutionContext context) {
+    public Span<?> startSpan(Request<?> request, URI httpURI, ExecutionContext context) {
         if (isAlreadyActive(request)) {
-            Span activeSpan = tracer.getActiveExitSpan();
-            if (activeSpan != null && SQS_TYPE.equals(activeSpan.getSubtype())) {
-                enrichSpan(activeSpan, request, request.getEndpoint(), context);
-                activeSpan.withSync(isRequestSync(request.getOriginalRequest()));
+            AbstractSpan<?> active = tracer.getActive();
+            if (active instanceof Span<?>) {
+                Span<?> activeSpan = (Span<?>) active;
+                if (activeSpan.isExit() && SQS_TYPE.equals(activeSpan.getSubtype())) {
+                    enrichSpan(activeSpan, request, request.getEndpoint(), context);
+                    activeSpan.withSync(isRequestSync(request.getOriginalRequest()));
+                }
             }
         } else {
-            Span span = super.startSpan(request, request.getEndpoint(), context);
+            Span<?> span = super.startSpan(request, request.getEndpoint(), context);
             if (span != null) {
                 span.withSync(isRequestSync(request.getOriginalRequest()));
                 return span;

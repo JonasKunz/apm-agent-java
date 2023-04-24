@@ -22,7 +22,7 @@ import co.elastic.apm.agent.collections.DetachedThreadLocalImpl;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.configuration.ServerlessConfiguration;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
-import co.elastic.apm.agent.impl.GlobalTracer;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.impl.metadata.Service;
 import co.elastic.apm.agent.impl.metadata.ServiceFactory;
 import co.elastic.apm.agent.logging.LogEcsReformatting;
@@ -35,6 +35,7 @@ import co.elastic.apm.agent.sdk.state.CallDepth;
 import co.elastic.apm.agent.sdk.state.GlobalState;
 import co.elastic.apm.agent.sdk.weakconcurrent.WeakConcurrent;
 import co.elastic.apm.agent.sdk.weakconcurrent.WeakMap;
+import co.elastic.apm.agent.tracer.Tracer;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -164,11 +165,14 @@ public abstract class AbstractEcsReformattingHelper<A, B, F, L> {
     private final String configuredServiceNodeName;
 
     @Nullable
+    private final String environment;
+
+    @Nullable
     private final Map<String, String> additionalFields;
     private final Reporter reporter;
 
     public AbstractEcsReformattingHelper() {
-        ElasticApmTracer tracer = GlobalTracer.requireTracerImpl();
+        Tracer tracer = GlobalTracer.get();
         loggingConfiguration = tracer.getConfig(LoggingConfiguration.class);
         additionalFields = loggingConfiguration.getLogEcsReformattingAdditionalFields();
         Service service = new ServiceFactory().createService(
@@ -183,7 +187,8 @@ public abstract class AbstractEcsReformattingHelper<A, B, F, L> {
         } else {
             configuredServiceNodeName = null;
         }
-        reporter = tracer.getReporter();
+        environment = service.getEnvironment();
+        reporter = tracer.require(ElasticApmTracer.class).getReporter();
     }
 
     /**
@@ -366,11 +371,17 @@ public abstract class AbstractEcsReformattingHelper<A, B, F, L> {
         }
     }
 
+    @Nullable
     private F createEcsFormatter(A originalAppender) {
         String serviceName = getServiceName();
         return createEcsFormatter(
-            getEventDataset(originalAppender, serviceName), serviceName, getServiceVersion(),
-            configuredServiceNodeName, additionalFields, getFormatterFrom(originalAppender)
+            getEventDataset(originalAppender, serviceName),
+            serviceName,
+            getServiceVersion(),
+            environment,
+            configuredServiceNodeName,
+            additionalFields,
+            getFormatterFrom(originalAppender)
         );
     }
 
@@ -465,8 +476,12 @@ public abstract class AbstractEcsReformattingHelper<A, B, F, L> {
     protected abstract A createAndStartEcsAppender(A originalAppender, String ecsAppenderName, F ecsFormatter);
 
     @Nullable
-    protected abstract F createEcsFormatter(String eventDataset, @Nullable String serviceName, @Nullable String serviceVersion,
-                                            @Nullable String serviceNodeName, @Nullable Map<String, String> additionalFields,
+    protected abstract F createEcsFormatter(String eventDataset,
+                                            @Nullable String serviceName,
+                                            @Nullable String serviceVersion,
+                                            @Nullable String serviceEnvironment,
+                                            @Nullable String serviceNodeName,
+                                            @Nullable Map<String, String> additionalFields,
                                             @Nullable F originalFormatter);
 
     /**

@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.nio.ByteBuffer;
 
 public class JVMTIAgentAccess {
 
@@ -38,5 +39,29 @@ public class JVMTIAgentAccess {
 
     @Nullable
     public static native String getMethodName0(long methodId, boolean appendSignature);
+
+    /**
+     * @param threadBuffer the buffer whose address will get stored in the native thread-local-storage for APM <-> profiling correlation
+     */
+    public static native void setThreadProfilingCorrelationBuffer0(ByteBuffer threadBuffer);
+
+    /**
+     * @param threadBuffer the buffer whose address will get stored in the native global variable for APM <-> profiling correlation
+     */
+    public static native void setProcessProfilingCorrelationBuffer0(ByteBuffer threadBuffer);
+
+    /**
+     * ONLY FOR TESTING!
+     * Creates a new bytebuffer for reading the currently configured thread local correlation buffer.
+     * This buffer points to the same memory address as the buffer configured via setThreadProfilingCorrelationBuffer0.
+     */
+    public static native ByteBuffer createThreadProfilingCorrelationBufferAlias(long capacity);
+
+    /**
+     * ONLY FOR TESTING!
+     * Creates a new bytebuffer for reading the currently configured process local correlation buffer.
+     * This buffer points to the same memory address as the buffer configured via setProcessProfilingCorrelationBuffer0.
+     */
+    public static native ByteBuffer createProcessProfilingCorrelationBufferAlias(long capacity);
 
 }

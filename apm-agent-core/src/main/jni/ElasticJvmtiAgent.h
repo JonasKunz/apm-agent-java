@@ -20,6 +20,7 @@ namespace elastic {
         constexpr jint toJint(ReturnCode rc) noexcept {
             return static_cast<jint>(rc);
         }
+    
 
         ReturnCode init(JNIEnv* jniEnv);
         ReturnCode destroy(JNIEnv* jniEnv);
@@ -27,6 +28,12 @@ namespace elastic {
         ReturnCode getStackTrace(JNIEnv* jniEnv, jint skipFrames, jint maxCollectFrames, bool collectLocations, jlongArray resultBuffer, jint& resultNumFrames);
         jclass getDeclaringClass(JNIEnv* jniEnv, jlong methodId);
         jstring getMethodName(JNIEnv* jniEnv, jlong methodId, bool appendSignature);
+
+        void setThreadProfilingCorrelationBuffer(JNIEnv* jniEnv, jobject bytebuffer);
+        void setProcessProfilingCorrelationBuffer(JNIEnv* jniEnv, jobject bytebuffer);
+
+        jobject createThreadProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity);
+        jobject createProcessProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity);
 
     }
 

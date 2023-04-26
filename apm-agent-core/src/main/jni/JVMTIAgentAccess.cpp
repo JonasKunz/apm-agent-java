@@ -34,3 +34,22 @@ JNIEXPORT jstring JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_getMe
     return elastic::jvmti_agent::getMethodName(env, methodId, appendSignature);
 }
 
+
+JNIEXPORT void JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setThreadProfilingCorrelationBuffer0(JNIEnv* env, jclass, jobject bytebuffer) {
+    elastic::jvmti_agent::setThreadProfilingCorrelationBuffer(env, bytebuffer);
+}
+
+
+JNIEXPORT void JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setProcessProfilingCorrelationBuffer0(JNIEnv* env, jclass, jobject bytebuffer) {
+    elastic::jvmti_agent::setProcessProfilingCorrelationBuffer(env, bytebuffer);
+}
+
+
+JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_createThreadProfilingCorrelationBufferAlias(JNIEnv * env , jclass, jlong capacity) {
+    return elastic::jvmti_agent::createThreadProfilingCorrelationBufferAlias(env, capacity);
+}
+
+
+JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_createProcessProfilingCorrelationBufferAlias(JNIEnv * env , jclass, jlong capacity) {
+    return elastic::jvmti_agent::createProcessProfilingCorrelationBufferAlias(env, capacity);
+}

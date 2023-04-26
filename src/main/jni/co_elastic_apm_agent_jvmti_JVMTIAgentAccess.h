@@ -47,6 +47,38 @@ JNIEXPORT jclass JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_getDec
 JNIEXPORT jstring JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_getMethodName0
   (JNIEnv *, jclass, jlong, jboolean);
 
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    setThreadProfilingCorrelationBuffer0
+ * Signature: (Ljava/nio/ByteBuffer;)V
+ */
+JNIEXPORT void JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setThreadProfilingCorrelationBuffer0
+  (JNIEnv *, jclass, jobject);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    setProcessProfilingCorrelationBuffer0
+ * Signature: (Ljava/nio/ByteBuffer;)V
+ */
+JNIEXPORT void JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_setProcessProfilingCorrelationBuffer0
+  (JNIEnv *, jclass, jobject);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    createThreadProfilingCorrelationBufferAlias
+ * Signature: (J)Ljava/nio/ByteBuffer;
+ */
+JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_createThreadProfilingCorrelationBufferAlias
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    createProcessProfilingCorrelationBufferAlias
+ * Signature: (J)Ljava/nio/ByteBuffer;
+ */
+JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_createProcessProfilingCorrelationBufferAlias
+  (JNIEnv *, jclass, jlong);
+
 #ifdef __cplusplus
 }
 #endif

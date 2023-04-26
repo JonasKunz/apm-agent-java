@@ -18,8 +18,8 @@
  */
 package co.elastic.apm.agent.impl.transaction;
 
-import co.elastic.apm.agent.util.HexUtils;
 import co.elastic.apm.agent.tracer.pooling.Recyclable;
+import co.elastic.apm.agent.util.HexUtils;
 import com.dslplatform.json.JsonWriter;
 
 import javax.annotation.Nullable;
@@ -81,6 +81,10 @@ public class Id implements Recyclable, co.elastic.apm.agent.tracer.Id {
     public int toBytes(byte[] bytes, int offset) {
         System.arraycopy(data, 0, bytes, offset, data.length);
         return offset + data.length;
+    }
+
+    public void writeToBuffer(ByteBuffer buffer) {
+        buffer.put(data);
     }
 
     public void fromLongs(long... values) {

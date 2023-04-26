@@ -22,6 +22,8 @@ import co.elastic.apm.agent.common.util.ResourceExtractionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -74,6 +76,16 @@ public class JVMTIAgent {
     public static String getMethodName(long methodId, boolean appendSignature) {
         assertInitialized();
         return JVMTIAgentAccess.getMethodName0(methodId, appendSignature);
+    }
+
+    public static void setProfilerProcessStorage(@Nullable ByteBuffer storage) {
+        assertInitialized();
+        JVMTIAgentAccess.setProcessProfilingCorrelationBuffer0(storage);
+    }
+
+    public static void setProfilerCurrentThreadStorage(@Nullable ByteBuffer storage) {
+        assertInitialized();
+        JVMTIAgentAccess.setThreadProfilingCorrelationBuffer0(storage);
     }
 
     private static void assertInitialized() {
@@ -147,8 +159,31 @@ public class JVMTIAgent {
     }
 
     private static void loadNativeLibrary() {
+        String os = System.getProperty("os.name").toLowerCase();
+        String arch = System.getProperty("os.arch").toLowerCase();
+        String libraryName;
+        if (os.contains("linux")) {
+            if (arch.contains("arm") || arch.contains("aarch32")) {
+                throw new IllegalStateException("Native agent does not work on Linux " + arch);
+            } else if (arch.contains("aarch")) {
+                libraryName = "linux-arm64";
+            } else if (arch.contains("64")) {
+                libraryName = "linux-x86_64";
+            } else {
+                throw new IllegalStateException("Native agent does not work on Linux " + arch);
+            }
+        } else if (os.contains("mac")) {
+            if (arch.contains("aarch")) {
+                libraryName = "darwin-arm64";
+            } else {
+                libraryName = "darwin-x86_64";
+            }
+        } else {
+            throw new IllegalStateException("Native agent does not work on " + os);
+        }
+
         String libraryDirectory = System.getProperty("java.io.tmpdir");
-        String libraryName = "elastic-jvmti-darwin-arm64";
+        libraryName = "elastic-jvmti-" + libraryName;
         Path file = ResourceExtractionUtil.extractResourceToDirectory("jvmti_agent/" + libraryName + ".so", libraryName, ".so", Paths.get(libraryDirectory));
         System.load(file.toString());
     }

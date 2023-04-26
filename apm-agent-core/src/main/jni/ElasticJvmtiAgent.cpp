@@ -4,6 +4,11 @@
 #include <array>
 #include <mutex>
 
+
+JNIEXPORT thread_local void* elastic_apm_profiling_correlation_tls = nullptr;
+
+JNIEXPORT void* elastic_apm_profiling_correlation_process_storage = nullptr;
+
 namespace elastic
 {
     namespace jvmti_agent
@@ -55,6 +60,9 @@ namespace elastic
                 if(error != JVMTI_ERROR_NONE) {
                     return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "jvmti->DisposeEnvironment() failed, return code is: ", error);
                 }
+
+                elastic_apm_profiling_correlation_process_storage = nullptr;
+
                 return ReturnCode::SUCCESS;
             } else {
                 return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR_NOT_INITIALIZED, "Elastic JVMTI Agent has not been initialized!");
@@ -157,6 +165,41 @@ namespace elastic
             }
             
             return resultStr;
+        }
+
+
+        void setThreadProfilingCorrelationBuffer(JNIEnv* jniEnv, jobject bytebuffer) {
+            if(bytebuffer == nullptr) {
+                elastic_apm_profiling_correlation_tls = nullptr;
+            } else {
+                elastic_apm_profiling_correlation_tls = jniEnv->GetDirectBufferAddress(bytebuffer);
+            }
+        }
+
+        void setProcessProfilingCorrelationBuffer(JNIEnv* jniEnv, jobject bytebuffer) {
+            if(bytebuffer == nullptr) {
+                elastic_apm_profiling_correlation_process_storage = nullptr;
+            } else {
+                elastic_apm_profiling_correlation_process_storage = jniEnv->GetDirectBufferAddress(bytebuffer);
+            }
+        }
+
+        //ONLY FOR TESTING!
+        jobject createThreadProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity) {
+            if(elastic_apm_profiling_correlation_tls == nullptr) {
+                return nullptr;
+            } else {
+                return jniEnv->NewDirectByteBuffer(elastic_apm_profiling_correlation_tls, capacity);
+            }
+        }
+
+        //ONLY FOR TESTING!
+        jobject createProcessProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity) {
+            if(elastic_apm_profiling_correlation_process_storage == nullptr) {
+                return nullptr;
+            } else {
+                return jniEnv->NewDirectByteBuffer(elastic_apm_profiling_correlation_process_storage, capacity);
+            }
         }
 
     } // namespace jvmti_agent

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function sharedArgs() {
-  echo "-std=c++20 -O2 -fPIC -shared -I /elastic_src/jni -o /elastic_src/resources/jvmti_agent/elastic-jvmti-$1-$2.$3 /elastic_src/jni/*.cpp"
+  echo "-std=c++20 -O2 -ftls-model=global-dynamic -fPIC -shared -I /elastic_src/jni -o /elastic_src/resources/jvmti_agent/elastic-jvmti-$1-$2.$3 /elastic_src/jni/*.cpp"
 }
 
 function clangDarwinArgs() {
@@ -9,7 +9,13 @@ function clangDarwinArgs() {
 }
 
 function gccLinuxArgs() {
-  echo "$(sharedArgs linux $1 so)"
+  case $1 in
+    arm64) tls_dialect=desc;;
+    x86_64) tls_dialect=gnu2;;
+    **) echo >&2 "unsupported architecture"; exit 1;;
+  esac
+
+  echo "-mtls-dialect=$tls_dialect $(sharedArgs linux $1 so)"
 }
 
 function gccWindowsArgs() {

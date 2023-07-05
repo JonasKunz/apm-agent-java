@@ -64,4 +64,26 @@ public class JVMTIAgentAccess {
      */
     public static native ByteBuffer createProcessProfilingCorrelationBufferAlias(long capacity);
 
+
+    public static native int startProfilerReturnChannelSocket0(String socketFilePath);
+
+    public static native int stopProfilerReturnChannelSocket0();
+
+    /**
+     * Reads messages of the provided size into the provided direct bytebuffer.
+     * This method is non-blocking. If no messages are available, it simply returns 0.
+     *
+     * @param outputDirectBuffer the output buffer, must be direct
+     * @param bytesPerMessage    the expected size per message in bytes
+     * @return the number of messages read
+     */
+    public static native int readProfilerReturnChannelSocket0(ByteBuffer outputDirectBuffer, int bytesPerMessage);
+
+    /**
+     * ONLY FOR TESTING!
+     * Sends data to the socket which can be subsequently read via {@link #readProfilerReturnChannelSocket0(ByteBuffer, int)}.
+     *
+     * @param data the message to send
+     */
+    public static native int sendToProfilerReturnChannelSocket0(byte[] data);
 }

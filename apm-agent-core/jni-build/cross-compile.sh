@@ -35,5 +35,5 @@ echo "Building Linux/x86_64"
 docker run $DOCKER_ARGS -e "BUILD_ARGS=$(gccLinuxArgs x86_64)" jni_linux_x86_64
 echo "Building Linux/arm64"
 docker run $DOCKER_ARGS -e "BUILD_ARGS=$(gccLinuxArgs arm64)" jni_linux_arm64
-echo "Building Windows/x86_64"
-docker run $DOCKER_ARGS -e "BUILD_ARGS=$(gccWindowsArgs x86_64)" jni_windows_x86_64
+#echo "Building Windows/x86_64"
+#docker run $DOCKER_ARGS -e "BUILD_ARGS=$(gccWindowsArgs x86_64)" jni_windows_x86_64

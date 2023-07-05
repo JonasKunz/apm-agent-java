@@ -22,10 +22,12 @@ import co.elastic.apm.agent.MockTracer;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.configuration.SpyConfiguration;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
+import co.elastic.apm.agent.impl.transaction.Id;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.TraceContext;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.jvmti.JVMTIAgentAccess;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.stagemonitor.configuration.ConfigurationRegistry;
 
@@ -33,7 +35,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doReturn;
 
 public class UniversalProfilingTest {
@@ -52,11 +54,11 @@ public class UniversalProfilingTest {
 
         ByteBuffer nativeData = getProcessCorrelationData();
         assertThat(nativeData.getLong()).isEqualTo(0L); //profiler version
-        long strLen = nativeData.getLong();
-        byte[] utf8ServiceName = new byte[(int) strLen];
-        nativeData.get(utf8ServiceName);
+        String serviceName = readLengthEncodedString(nativeData);
+        assertThat(serviceName).isEqualTo("foo-baß");
 
-        assertThat(new String(utf8ServiceName, StandardCharsets.UTF_8)).isEqualTo("foo-baß");
+        String socketFile = readLengthEncodedString(nativeData);
+        assertThat(socketFile).contains("elastic_apm_profiler_correl_socket_");
 
         //simulate profiler updating the version
         nativeData.putLong(0, 42);
@@ -65,6 +67,14 @@ public class UniversalProfilingTest {
 
         tracer.stop();
         assertThat(getProcessCorrelationData()).isNull();
+    }
+
+    @NotNull
+    private static String readLengthEncodedString(ByteBuffer nativeData) {
+        long strLen = nativeData.getLong();
+        byte[] str = new byte[(int) strLen];
+        nativeData.get(str);
+        return new String(str, StandardCharsets.UTF_8);
     }
 
 
@@ -136,5 +146,59 @@ public class UniversalProfilingTest {
         }
     }
 
+
+    @Test
+    void testTransactionProfilingReturnChannel() throws InterruptedException {
+
+        Id sample1 = Id.new128BitId();
+        sample1.fromLongs(1, 2);
+        Id sample2 = Id.new128BitId();
+        sample2.fromLongs(2, 3);
+        Id sample3 = Id.new128BitId();
+        sample3.fromLongs(3, 4);
+
+        ConfigurationRegistry config = SpyConfiguration.createSpyConfig();
+        CoreConfiguration coreConfig = config.getConfig(CoreConfiguration.class);
+        doReturn(500L).when(coreConfig).getProfilerCorrelationDelayMs();
+
+        MockTracer.MockInstrumentationSetup setup = MockTracer.createMockInstrumentationSetup(config);
+        ElasticApmTracer tracer = setup.getTracer();
+
+        //Fake a profiler start by updating the profiler version in the process shared storage
+        getProcessCorrelationData().putLong(0, 1L);
+
+        Transaction tx = tracer.startRootTransaction(null).withName("foo-bar");
+        //simulate a sample coming in while the transaction is started
+        JVMTIAgentAccess.sendToProfilerReturnChannelSocket0(generateReturnChannelMessage(tx, sample1, 1));
+        Thread.sleep(200);
+        tx.end();
+
+        //Sleep a little to simualte a delay in profiling data
+        Thread.sleep(100);
+        JVMTIAgentAccess.sendToProfilerReturnChannelSocket0(generateReturnChannelMessage(tx, sample2, 2));
+        JVMTIAgentAccess.sendToProfilerReturnChannelSocket0(generateReturnChannelMessage(tx, sample3, 3));
+
+        //Simulate profiling samples coming
+        setup.getReporter().awaitTransactionCount(1);
+        Transaction txResult = setup.getReporter().getFirstTransaction();
+
+        assertThat(txResult.getProfilerSamples())
+            .containsExactly(sample1, sample2, sample2, sample3, sample3, sample3);
+
+        tracer.stop();
+    }
+
+    private byte[] generateReturnChannelMessage(Transaction tx, Id sampleId, int count) {
+        byte[] resultData = new byte[42];
+        ByteBuffer result = ByteBuffer.wrap(resultData);
+        result.order(ByteOrder.nativeOrder());
+
+        tx.getTraceContext().getTraceId().toBytes(resultData, 0);
+        tx.getTraceContext().getId().toBytes(resultData, 16);
+        sampleId.toBytes(resultData, 24);
+        result.putShort(40, (short) count);
+
+        return resultData;
+    }
 
 }

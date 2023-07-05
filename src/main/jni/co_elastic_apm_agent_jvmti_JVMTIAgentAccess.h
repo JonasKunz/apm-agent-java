@@ -79,6 +79,38 @@ JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_creat
 JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_createProcessProfilingCorrelationBufferAlias
   (JNIEnv *, jclass, jlong);
 
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    startProfilerReturnChannelSocket0
+ * Signature: (Ljava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_startProfilerReturnChannelSocket0
+  (JNIEnv *, jclass, jstring);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    stopProfilerReturnChannelSocket0
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_stopProfilerReturnChannelSocket0
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    readProfilerReturnChannelSocket0
+ * Signature: (Ljava/nio/ByteBuffer;I)I
+ */
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_readProfilerReturnChannelSocket0
+  (JNIEnv *, jclass, jobject, jint);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    sendToProfilerReturnChannelSocket0
+ * Signature: ([B)I
+ */
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_sendToProfilerReturnChannelSocket0
+  (JNIEnv *, jclass, jbyteArray);
+
 #ifdef __cplusplus
 }
 #endif

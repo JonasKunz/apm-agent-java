@@ -980,6 +980,7 @@ public class DslJsonSerializer {
 
         private void serializeTransaction(final Transaction transaction) {
             TraceContext traceContext = transaction.getTraceContext();
+            logger.info("Serializing transaction '{}' with the following profiler samples: {}", transaction.getNameAsString(), transaction.getProfilerSamples());
 
             jw.writeByte(OBJECT_START);
             writeTimestamp(transaction.getTimestamp());

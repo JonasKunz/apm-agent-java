@@ -18,6 +18,7 @@
  */
 package co.elastic.apm.agent.impl.transaction;
 
+import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.configuration.SpanConfiguration;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
@@ -25,16 +26,16 @@ import co.elastic.apm.agent.impl.context.Response;
 import co.elastic.apm.agent.impl.context.TransactionContext;
 import co.elastic.apm.agent.impl.context.web.ResultUtil;
 import co.elastic.apm.agent.impl.sampling.Sampler;
-import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.metrics.Labels;
 import co.elastic.apm.agent.metrics.MetricRegistry;
 import co.elastic.apm.agent.metrics.Timer;
 import co.elastic.apm.agent.tracer.Outcome;
-import co.elastic.apm.agent.util.KeyListConcurrentHashMap;
 import co.elastic.apm.agent.tracer.dispatch.HeaderGetter;
+import co.elastic.apm.agent.util.KeyListConcurrentHashMap;
 import org.HdrHistogram.WriterReaderPhaser;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 
 import static co.elastic.apm.agent.configuration.CoreConfiguration.TraceContinuationStrategy.RESTART;
@@ -60,6 +61,8 @@ public class Transaction extends AbstractSpan<Transaction> implements co.elastic
     private final TransactionContext context = new TransactionContext();
     private final SpanCount spanCount = new SpanCount();
     private final DroppedSpanStats droppedSpanStats = new DroppedSpanStats();
+
+    private final ArrayList<Id> profilerSamples = new ArrayList<>();
     /**
      * type: subtype: timer
      * <p>
@@ -295,6 +298,8 @@ public class Transaction extends AbstractSpan<Transaction> implements co.elastic
         frameworkName = null;
         frameworkVersion = null;
         faas.resetState();
+        profilerSamples.clear();
+        profilerSamples.trimToSize();
         // don't clear timerBySpanTypeAndSubtype map (see field-level javadoc)
     }
 
@@ -493,5 +498,15 @@ public class Transaction extends AbstractSpan<Transaction> implements co.elastic
         } finally {
             phaser.readerUnlock();
         }
+    }
+
+    public void addProfilerSamples(Id profilerStackTrace, int count) {
+        for (int i = 0; i < count; i++) {
+            profilerSamples.add(profilerStackTrace);
+        }
+    }
+
+    public List<Id> getProfilerSamples() {
+        return profilerSamples;
     }
 }

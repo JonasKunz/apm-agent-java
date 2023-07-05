@@ -32,6 +32,12 @@ namespace elastic {
         void setThreadProfilingCorrelationBuffer(JNIEnv* jniEnv, jobject bytebuffer);
         void setProcessProfilingCorrelationBuffer(JNIEnv* jniEnv, jobject bytebuffer);
 
+        ReturnCode createProfilerSocket(JNIEnv* jniEnv, jstring filepath);
+        ReturnCode closeProfilerSocket(JNIEnv* jniEnv);
+
+        jint readProfilerSocketMessages(JNIEnv* jniEnv, jobject outputBuffer, jint bytesPerMessage);
+        ReturnCode writeProfilerSocketMessages(JNIEnv* jniEnv, jbyteArray message);
+
         jobject createThreadProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity);
         jobject createProcessProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity);
 

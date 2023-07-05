@@ -3,6 +3,10 @@
 #include <cstring>
 #include <array>
 #include <mutex>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 
 JNIEXPORT thread_local void* elastic_apm_profiling_correlation_tls = nullptr;
@@ -15,6 +19,8 @@ namespace elastic
     {
 
         static jvmtiEnv* jvmti;
+        static int profilerSocket = -1;
+        static std::string profilerSocketFile;
 
         namespace {
 
@@ -62,6 +68,13 @@ namespace elastic
                 }
 
                 elastic_apm_profiling_correlation_process_storage = nullptr;
+
+                if(profilerSocket != -1) {
+                    auto result = closeProfilerSocket(jniEnv);
+                    if(result != ReturnCode::SUCCESS) {
+                        return result;
+                    }
+                }
 
                 return ReturnCode::SUCCESS;
             } else {
@@ -200,6 +213,108 @@ namespace elastic
             } else {
                 return jniEnv->NewDirectByteBuffer(elastic_apm_profiling_correlation_process_storage, capacity);
             }
+        }
+
+
+        ReturnCode createProfilerSocket(JNIEnv* jniEnv, jstring filepath) {
+            if(profilerSocket != -1) {
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Profiler socket already opened!");
+            }
+
+            int fd = socket(PF_UNIX, SOCK_DGRAM, 0);
+            if (fd == -1) {
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Could not create SOCK_DGRAM socket");
+            }
+            int flags = fcntl(fd, F_GETFL, 0);
+            if (flags == -1) {
+                close(fd);
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Could not read fnctl flags from socket");
+            }
+            if(fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0){
+                close(fd);
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Could not configure socket to be non-blocking");                
+            }
+
+            sockaddr_un addr = { .sun_family = AF_UNIX };
+            const char* pathCstr = jniEnv->GetStringUTFChars(filepath, 0);
+            std::string pathStr(pathCstr);
+            jniEnv->ReleaseStringUTFChars(filepath, pathCstr);
+            strncpy(addr.sun_path, pathStr.c_str(), sizeof(addr.sun_path) - 1);
+
+            if (bind(fd, (sockaddr*)&addr, sizeof(addr) ) < 0) {
+                close(fd);
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Could not bind socket to the given filepath");    
+            }
+
+            profilerSocket = fd;
+            profilerSocketFile = pathStr;
+            return ReturnCode::SUCCESS;
+        }
+
+        ReturnCode closeProfilerSocket(JNIEnv* jniEnv) {
+            if(profilerSocket == -1) {
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "No profiler socket active!");
+            }
+            close(profilerSocket);
+            unlink(profilerSocketFile.c_str());
+            profilerSocket = -1;
+            profilerSocketFile = "";
+            return ReturnCode::SUCCESS;
+        }
+
+        ReturnCode writeProfilerSocketMessages(JNIEnv* jniEnv, jbyteArray message) {
+            if(profilerSocket == -1) {
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "No profiler socket active!");
+            }
+
+            jboolean isCopy;
+            jsize numBytes = jniEnv->GetArrayLength(message);
+            jbyte* data = jniEnv->GetByteArrayElements(message, &isCopy);
+            if(data == nullptr) {
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Could not get array data");
+            }
+            
+            sockaddr_un addr = { .sun_family = AF_UNIX };
+            strncpy(addr.sun_path, profilerSocketFile.c_str(), sizeof(addr.sun_path) - 1);
+
+            auto result = sendto(profilerSocket, data, numBytes, MSG_DONTWAIT, (sockaddr*)&addr, sizeof(addr));
+            auto errorNum = errno;
+
+            jniEnv->ReleaseByteArrayElements(message, data, 0);
+            if(result != numBytes) {
+                return raiseExceptionAndReturn(jniEnv, ReturnCode::ERROR, "Could not send to socket, return value is ", result," errno is ", errorNum);
+            }
+
+            return ReturnCode::SUCCESS;
+        }
+
+        jint readProfilerSocketMessages(JNIEnv* jniEnv, jobject outputBuffer, jint bytesPerMessage) {
+            if(profilerSocket == -1) {
+                return raiseExceptionAndReturn(jniEnv, -1, "No profiler socket active!");
+            }
+
+            jsize arrayLen = jniEnv->GetDirectBufferCapacity(outputBuffer);
+            uint8_t* output = static_cast<uint8_t*>(jniEnv->GetDirectBufferAddress(outputBuffer));
+            if(output == nullptr || arrayLen == -1) {
+                return raiseExceptionAndReturn(jniEnv, -1, "Provided bytebuffer is not a direct buffer");
+            }
+
+            jsize numRead = 0;
+            while((arrayLen - numRead * bytesPerMessage) >= bytesPerMessage) {
+                int n = recv(profilerSocket, output + numRead * bytesPerMessage, bytesPerMessage, 0);
+                if (n == -1) {
+                    if(errno == EAGAIN || errno == EWOULDBLOCK) {
+                        break; //no more data to read
+                    } else {
+                        return raiseExceptionAndReturn(jniEnv, -1, "Failed to read from socket, error code is ", errno);
+                    }
+                }
+                if(n < bytesPerMessage) {
+                    continue; //received a truncated message, which should be ignored
+                }
+                numRead++;
+            }
+            return numRead;
         }
 
     } // namespace jvmti_agent

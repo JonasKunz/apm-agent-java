@@ -557,6 +557,16 @@ public abstract class AbstractSpan<T extends AbstractSpan<T>> implements Recycla
         end(traceContext.getClock().getEpochMicros());
     }
 
+    /**
+     * @return the amount of time that has passed since this span ended, in microseconds.
+     */
+    public long getTimeSinceEnded() {
+        if (!finished) {
+            throw new IllegalStateException("Transaction is not ended yet!");
+        }
+        return traceContext.getClock().getEpochMicros() - endTimestamp.get();
+    }
+
     public final void end(long epochMicros) {
         if (!finished) {
             this.endTimestamp.set(epochMicros);

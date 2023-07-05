@@ -88,6 +88,25 @@ public class JVMTIAgent {
         JVMTIAgentAccess.setThreadProfilingCorrelationBuffer0(storage);
     }
 
+    public static void startProfilerReturnChannel(String absoluteFilePath) {
+        assertInitialized();
+        logger.info("Opening profiler return channel via file {}", absoluteFilePath);
+        JVMTIAgentAccess.startProfilerReturnChannelSocket0(absoluteFilePath);
+    }
+
+    public static void stopProfilerReturnChannel() {
+        assertInitialized();
+        JVMTIAgentAccess.stopProfilerReturnChannelSocket0();
+    }
+
+    /**
+     * @return the number of messages (not bytes) read
+     */
+    public static int readFromProfilerReturnChannel(ByteBuffer outputBuffer, int messageSize) {
+        assertInitialized();
+        return JVMTIAgentAccess.readProfilerReturnChannelSocket0(outputBuffer, messageSize);
+    }
+
     private static void assertInitialized() {
         switch (state) {
             case NOT_LOADED:

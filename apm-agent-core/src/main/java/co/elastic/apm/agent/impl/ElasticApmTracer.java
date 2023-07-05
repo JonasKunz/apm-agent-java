@@ -48,11 +48,12 @@ import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import co.elastic.apm.agent.sdk.weakconcurrent.WeakConcurrent;
 import co.elastic.apm.agent.sdk.weakconcurrent.WeakMap;
 import co.elastic.apm.agent.tracer.GlobalTracer;
-import co.elastic.apm.agent.util.DependencyInjectingServiceLoader;
-import co.elastic.apm.agent.util.ExecutorUtils;
 import co.elastic.apm.agent.tracer.Scope;
 import co.elastic.apm.agent.tracer.dispatch.BinaryHeaderGetter;
 import co.elastic.apm.agent.tracer.dispatch.TextHeaderGetter;
+import co.elastic.apm.agent.universalprofiling.UniversalProfilingLifecycleListener;
+import co.elastic.apm.agent.util.DependencyInjectingServiceLoader;
+import co.elastic.apm.agent.util.ExecutorUtils;
 import co.elastic.apm.agent.util.PrivilegedActionUtils;
 import co.elastic.apm.agent.util.VersionUtils;
 import org.stagemonitor.configuration.ConfigurationOption;
@@ -300,6 +301,10 @@ public class ElasticApmTracer implements Tracer {
         if (serviceInfo != null) {
             transaction.getTraceContext().setServiceInfo(serviceInfo.getServiceName(), serviceInfo.getServiceVersion());
         }
+        UniversalProfilingLifecycleListener profilingCorrelation = getLifecycleListener(UniversalProfilingLifecycleListener.class);
+        if (profilingCorrelation != null) {
+            profilingCorrelation.transactionStarted(transaction);
+        }
     }
 
     public Transaction noopTransaction() {
@@ -450,7 +455,12 @@ public class ElasticApmTracer implements Tracer {
         if (!transaction.isNoop() &&
             (transaction.isSampled() || apmServerClient.supportsKeepingUnsampledTransaction())) {
             // we do report non-sampled transactions (without the context)
-            reporter.report(transaction);
+            UniversalProfilingLifecycleListener profilingCorrelation = getLifecycleListener(UniversalProfilingLifecycleListener.class);
+            if (profilingCorrelation != null) {
+                profilingCorrelation.bufferEndedTransaction(transaction);
+            } else {
+                reporter.report(transaction);
+            }
         } else {
             transaction.decrementReferences();
         }

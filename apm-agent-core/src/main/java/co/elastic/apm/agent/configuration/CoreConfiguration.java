@@ -835,6 +835,13 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         .dynamic(true)
         .buildWithDefault(ActivationMethod.UNKNOWN);
 
+    private final ConfigurationOption<TimeDuration> profilerCorrelationDelay = TimeDurationValueConverter.durationOption("ms")
+        .key("profiler_correlation_delay")
+        .configurationCategory(CORE_CATEGORY)
+        .description("The maximum duration to buffer transactions in order to ensure all profiling data was correlated.")
+        .dynamic(true)
+        .buildWithDefault(TimeDuration.of("10000ms"));
+
     public boolean isEnabled() {
         return enabled.get();
     }
@@ -1109,6 +1116,11 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
 
     public ActivationMethod getActivationMethod() {
         return activationMethod.get();
+    }
+
+
+    public long getProfilerCorrelationDelayMs() {
+        return profilerCorrelationDelay.get().getMillis();
     }
 
     public enum EventType {

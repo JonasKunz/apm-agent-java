@@ -21,6 +21,7 @@ package co.elastic.apm.agent.universalprofiling;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.context.AbstractLifecycleListener;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
+import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.jvmti.JVMTIAgent;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
@@ -70,10 +71,14 @@ public class UniversalProfilingLifecycleListener extends AbstractLifecycleListen
 
     private ByteBuffer processStorage;
 
+    private TransactionProfilingCorrelator profilingCorrelator;
+
     @Override
     public void init(ElasticApmTracer tracer) throws Exception {
         try {
-            initProcessStorage(tracer);
+            profilingCorrelator = new TransactionProfilingCorrelator(tracer, this);
+            profilingCorrelator.start();
+            initProcessStorage(tracer, profilingCorrelator.getSocketFilePath());
             runProfilerVersionPoller(tracer);
             JVMTIAgent.setProfilerProcessStorage(processStorage);
             tracer.registerSpanListener(new ProfilingActivationCorrelator(tracer));
@@ -92,12 +97,14 @@ public class UniversalProfilingLifecycleListener extends AbstractLifecycleListen
         }, 0, 5, TimeUnit.SECONDS);
     }
 
-    private void initProcessStorage(ElasticApmTracer tracer) {
+    private void initProcessStorage(ElasticApmTracer tracer, String socketFilePath) {
         processStorage = ByteBuffer.allocateDirect(4096);
         processStorage.order(ByteOrder.nativeOrder());
-        resetProfilerVersion();
+        processStorage.position(0);
+        processStorage.putLong(0L); //profiler version
         String serviceName = tracer.getConfig(CoreConfiguration.class).getServiceName();
-        setServiceName(serviceName);
+        writeLengthEncodedString(processStorage, serviceName);
+        writeLengthEncodedString(processStorage, socketFilePath);
     }
 
     public void resetProfilerVersion() {
@@ -108,12 +115,10 @@ public class UniversalProfilingLifecycleListener extends AbstractLifecycleListen
         return processStorage.getLong(PROFILER_VERSION_OFFSET);
     }
 
-    public void setServiceName(String serviceName) {
-        byte[] utf8Name = serviceName.getBytes(StandardCharsets.UTF_8);
-        processStorage.putLong(SERVICE_NAME_OFFSET, 0);
-        processStorage.position(SERVICE_NAME_OFFSET + 8);
-        processStorage.put(utf8Name);
-        processStorage.putLong(SERVICE_NAME_OFFSET, utf8Name.length);
+    public void writeLengthEncodedString(ByteBuffer buffer, String str) {
+        byte[] utf8str = str.getBytes(StandardCharsets.UTF_8);
+        buffer.putLong(utf8str.length);
+        buffer.put(utf8str);
     }
 
 
@@ -123,11 +128,20 @@ public class UniversalProfilingLifecycleListener extends AbstractLifecycleListen
             profilerVersionLogger.cancel(false);
         }
         if (isRunning) {
+            profilingCorrelator.stop();
             try {
                 JVMTIAgent.setProfilerProcessStorage(null);
             } catch (Throwable t) {
                 logger.error("Failed to shutdown universal profiler correlation", t);
             }
         }
+    }
+
+    public void transactionStarted(Transaction transaction) {
+        profilingCorrelator.transactionStarted(transaction);
+    }
+
+    public void bufferEndedTransaction(Transaction transaction) {
+        profilingCorrelator.bufferEndedTransaction(transaction);
     }
 }

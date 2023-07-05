@@ -53,3 +53,23 @@ JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_creat
 JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_createProcessProfilingCorrelationBufferAlias(JNIEnv * env , jclass, jlong capacity) {
     return elastic::jvmti_agent::createProcessProfilingCorrelationBufferAlias(env, capacity);
 }
+
+
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_startProfilerReturnChannelSocket0(JNIEnv* env, jclass, jstring socketFilePath) {
+    return toJint(elastic::jvmti_agent::createProfilerSocket(env, socketFilePath));
+}
+
+
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_stopProfilerReturnChannelSocket0(JNIEnv* env, jclass) {
+    return toJint(elastic::jvmti_agent::closeProfilerSocket(env));
+}
+
+
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_readProfilerReturnChannelSocket0(JNIEnv* env, jclass, jobject byteBuf, jint messageSize) {
+    return elastic::jvmti_agent::readProfilerSocketMessages(env, byteBuf, messageSize);
+}
+
+
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_sendToProfilerReturnChannelSocket0(JNIEnv* env, jclass, jbyteArray message) {
+    return toJint(elastic::jvmti_agent::writeProfilerSocketMessages(env, message));
+}

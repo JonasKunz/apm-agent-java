@@ -21,6 +21,7 @@ package co.elastic.apm.agent.impl.transaction;
 import co.elastic.apm.agent.tracer.pooling.Recyclable;
 import co.elastic.apm.agent.util.HexUtils;
 import com.dslplatform.json.JsonWriter;
+import org.apache.commons.codec.binary.Base64;
 
 import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
@@ -81,6 +82,10 @@ public class Id implements Recyclable, co.elastic.apm.agent.tracer.Id {
     public int toBytes(byte[] bytes, int offset) {
         System.arraycopy(data, 0, bytes, offset, data.length);
         return offset + data.length;
+    }
+
+    public String getBase64UrlSafe() {
+        return Base64.encodeBase64URLSafeString(data);
     }
 
     public void writeToBuffer(ByteBuffer buffer) {

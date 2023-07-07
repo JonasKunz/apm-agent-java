@@ -980,11 +980,11 @@ public class DslJsonSerializer {
 
         private void serializeTransaction(final Transaction transaction) {
             TraceContext traceContext = transaction.getTraceContext();
-            logger.info("Serializing transaction '{}' with the following profiler samples: {}", transaction.getNameAsString(), transaction.getProfilerSamples());
 
             jw.writeByte(OBJECT_START);
             writeTimestamp(transaction.getTimestamp());
             writeField("name", transaction.getNameForSerialization());
+            writeProfilerStackTraceId(transaction);
             serializeTraceContext(traceContext, false);
             serializeSpanLinks(transaction.getSpanLinks());
             writeField("type", transaction.getType());
@@ -1004,6 +1004,26 @@ public class DslJsonSerializer {
             }
             writeLastField("sampled", transaction.isSampled());
             jw.writeByte(OBJECT_END);
+        }
+
+        private void writeProfilerStackTraceId(Transaction transaction) {
+            List<String> ids = new ArrayList<>();
+            for (Id sample : transaction.getProfilerSamples()) {
+                ids.add(sample.getBase64UrlSafe());
+            }
+            logger.info("Serializing transaction '{}' with the following profiler samples: {}", transaction.getNameAsString(), ids);
+            if (!ids.isEmpty()) {
+                writeFieldName("profiler_stack_trace_ids");
+                jw.writeByte(ARRAY_START);
+                for (int i = 0, size = ids.size(); i < size; i++) {
+                    if (i > 0) {
+                        jw.writeByte(COMMA);
+                    }
+                    jw.writeString(ids.get(i));
+                }
+                jw.writeByte(ARRAY_END);
+                jw.writeByte(COMMA);
+            }
         }
 
         private void serializeTraceContext(TraceContext traceContext, boolean serializeTransactionId) {

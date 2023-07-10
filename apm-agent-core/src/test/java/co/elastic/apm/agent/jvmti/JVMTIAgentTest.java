@@ -27,7 +27,9 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.ref.WeakReference;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -108,6 +110,60 @@ public class JVMTIAgentTest {
         }
     }
 
+    @Nested
+    public class VirtualThreadMounting {
+
+        @Test
+        void virtualThreadMountEvents() throws Exception {
+            System.out.println(JVMTIAgent.checkVirtualThreadMountEventSupport());
+
+            VirtualThreadMountCallback cb = new VirtualThreadMountCallback() {
+                @Override
+                public void threadMounted(Thread thread) {
+                    System.out.println("Thread mounted: " + thread.getName());
+                }
+
+                @Override
+                public void threadUnmounted(Thread thread) {
+                    System.out.println("Thread unmounted: " + thread.getName());
+                }
+            };
+
+            JVMTIAgent.setVirtualThreadMountCallback(cb);
+            List<Thread> threads = new ArrayList<>();
+            for (int i = 0; i < 100000; i++) {
+
+                Thread t1 = startVirtualThread(() -> {
+                    //System.out.println("running " + Thread.currentThread().getName());
+
+                    try {
+                        Thread.sleep(1000L);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    //System.out.println("running done");
+                });
+                threads.add(t1);
+            }
+            ;
+            threads.forEach(t -> {
+                try {
+                    t.join();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+
+        Thread startVirtualThread(Runnable task) {
+            try {
+                return (Thread) Thread.class.getMethod("startVirtualThread", Runnable.class)
+                    .invoke(null, task);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
 
     @AfterEach
     void destroy() {

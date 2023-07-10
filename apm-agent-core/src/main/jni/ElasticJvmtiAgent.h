@@ -41,6 +41,9 @@ namespace elastic {
         jobject createThreadProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity);
         jobject createProcessProfilingCorrelationBufferAlias(JNIEnv* jniEnv, jlong capacity);
 
+        jstring checkVirtualThreadMountEventSupport(JNIEnv* jniEnv);
+        ReturnCode setVirtualThreadMountCallbackEnabled(JNIEnv* jniEnv, jboolean enable);
+
     }
 
     template< class... Args >
@@ -52,6 +55,14 @@ namespace elastic {
             env->ThrowNew(clazz, fmt.str().c_str());
         }
     }
+
+    template< class... Args >
+    jstring formatJString(JNIEnv* env,  Args&&... messageParts) {
+        std::stringstream fmt;
+        ([&]{ fmt << messageParts; }(), ...);
+        return env->NewStringUTF(fmt.str().c_str());
+    }
+
 
     template< class... Args >
     void raiseException(JNIEnv* env, Args&&... messageParts) {

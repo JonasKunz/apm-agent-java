@@ -28,6 +28,8 @@ public class JVMTIAgentAccess {
 
     private static final Logger logger = LoggerFactory.getLogger(JVMTIAgentAccess.class);
 
+    static volatile VirtualThreadMountCallback threadMountCallback;
+
     public static native int init0();
 
     public static native int destroy0();
@@ -86,4 +88,24 @@ public class JVMTIAgentAccess {
      * @param data the message to send
      */
     public static native int sendToProfilerReturnChannelSocket0(byte[] data);
+
+    public static native String checkVirtualThreadMountEventSupport0();
+
+    public static native int enableVirtualThreadMountEvents0();
+
+    public static native int disableVirtualThreadMountEvents0();
+
+    static void onThreadMount(Thread thread) {
+        VirtualThreadMountCallback cb = threadMountCallback;
+        if (cb != null) {
+            threadMountCallback.threadMounted(thread);
+        }
+    }
+
+    static void onThreadUnmount(Thread thread) {
+        VirtualThreadMountCallback cb = threadMountCallback;
+        if (cb != null) {
+            threadMountCallback.threadUnmounted(thread);
+        }
+    }
 }

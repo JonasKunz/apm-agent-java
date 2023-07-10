@@ -107,6 +107,23 @@ public class JVMTIAgent {
         return JVMTIAgentAccess.readProfilerReturnChannelSocket0(outputBuffer, messageSize);
     }
 
+    public static String checkVirtualThreadMountEventSupport() {
+        assertInitialized();
+        return JVMTIAgentAccess.checkVirtualThreadMountEventSupport0();
+    }
+
+    public static synchronized void setVirtualThreadMountCallback(VirtualThreadMountCallback cb) {
+        boolean wasEnabled = JVMTIAgentAccess.threadMountCallback != null;
+        boolean shouldEnable = cb != null;
+        JVMTIAgentAccess.threadMountCallback = cb;
+        if (!wasEnabled && shouldEnable) {
+            JVMTIAgentAccess.enableVirtualThreadMountEvents0();
+        }
+        if (wasEnabled && !shouldEnable) {
+            JVMTIAgentAccess.disableVirtualThreadMountEvents0();
+        }
+    }
+
     private static void assertInitialized() {
         switch (state) {
             case NOT_LOADED:
@@ -156,6 +173,7 @@ public class JVMTIAgent {
     }
 
     public static synchronized void destroy() {
+        JVMTIAgentAccess.threadMountCallback = null;
         switch (state) {
             case INITIALIZED:
                 try {

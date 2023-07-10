@@ -73,3 +73,15 @@ JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_readProf
 JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_sendToProfilerReturnChannelSocket0(JNIEnv* env, jclass, jbyteArray message) {
     return toJint(elastic::jvmti_agent::writeProfilerSocketMessages(env, message));
 }
+
+JNIEXPORT jstring JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_checkVirtualThreadMountEventSupport0(JNIEnv* env, jclass) {
+    return elastic::jvmti_agent::checkVirtualThreadMountEventSupport(env);
+}
+
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_enableVirtualThreadMountEvents0(JNIEnv* env, jclass) {
+    return toJint(elastic::jvmti_agent::setVirtualThreadMountCallbackEnabled(env, true));
+}
+
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_disableVirtualThreadMountEvents0(JNIEnv* env, jclass) {
+    return toJint(elastic::jvmti_agent::setVirtualThreadMountCallbackEnabled(env, false));
+}

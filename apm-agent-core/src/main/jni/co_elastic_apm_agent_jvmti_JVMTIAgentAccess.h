@@ -82,7 +82,7 @@ JNIEXPORT jobject JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_creat
 /*
  * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
  * Method:    startProfilerReturnChannelSocket0
- * Signature: (Ljava/lang/String;)V
+ * Signature: (Ljava/lang/String;)I
  */
 JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_startProfilerReturnChannelSocket0
   (JNIEnv *, jclass, jstring);
@@ -90,7 +90,7 @@ JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_startPro
 /*
  * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
  * Method:    stopProfilerReturnChannelSocket0
- * Signature: ()V
+ * Signature: ()I
  */
 JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_stopProfilerReturnChannelSocket0
   (JNIEnv *, jclass);
@@ -106,10 +106,34 @@ JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_readProf
 /*
  * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
  * Method:    sendToProfilerReturnChannelSocket0
- * Signature: ([B)V
+ * Signature: ([B)I
  */
 JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_sendToProfilerReturnChannelSocket0
   (JNIEnv *, jclass, jbyteArray);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    checkVirtualThreadMountEventSupport0
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_checkVirtualThreadMountEventSupport0
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    enableVirtualThreadMountEvents0
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_enableVirtualThreadMountEvents0
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     co_elastic_apm_agent_jvmti_JVMTIAgentAccess
+ * Method:    disableVirtualThreadMountEvents0
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_co_elastic_apm_agent_jvmti_JVMTIAgentAccess_disableVirtualThreadMountEvents0
+  (JNIEnv *, jclass);
 
 #ifdef __cplusplus
 }

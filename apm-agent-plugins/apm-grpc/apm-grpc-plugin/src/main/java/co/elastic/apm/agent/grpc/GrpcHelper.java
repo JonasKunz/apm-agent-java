@@ -108,7 +108,10 @@ public class GrpcHelper {
     // transaction management (server part)
 
     /**
-     * Starts transaction, when not {@literal null}, transaction is activated.
+     * Starts transaction.
+     * Returns the active context, if this method had any effect.
+     * The active context can be a started transaction or alternatively a context just carrying the remote headers.
+     *
      *
      * @param tracer     tracer
      * @param cl         classloader
@@ -117,7 +120,7 @@ public class GrpcHelper {
      * @return transaction, or {@literal null} if none has been created
      */
     @Nullable
-    public Transaction<?> startTransaction(Tracer tracer, ClassLoader cl, ServerCall<?, ?> serverCall, Metadata headers) {
+    public ElasticContext<?> startTransaction(Tracer tracer, ClassLoader cl, ServerCall<?, ?> serverCall, Metadata headers) {
         MethodDescriptor<?, ?> methodDescriptor = serverCall.getMethodDescriptor();
 
         // ignore non-unary method calls for now
@@ -133,14 +136,19 @@ public class GrpcHelper {
 
         Transaction<?> transaction = tracer.startChildTransaction(headers, headerGetter, cl);
         if (transaction == null) {
-            return null;
+            ElasticContext<?> remoteParent = tracer.currentContext().withRemoteParent(headers, headerGetter);
+            if(remoteParent != null) {
+                remoteParent.activate();
+            }
+            return remoteParent;
         }
 
         transaction.withName(methodDescriptor.getFullMethodName())
             .withType("request")
             .setFrameworkName(FRAMEWORK_NAME);
+        transaction.activate();
 
-        return transaction.activate();
+        return tracer.currentContext();
     }
 
     /**

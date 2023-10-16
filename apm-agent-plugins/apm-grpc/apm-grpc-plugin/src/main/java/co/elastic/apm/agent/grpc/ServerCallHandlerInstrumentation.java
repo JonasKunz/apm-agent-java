@@ -18,6 +18,7 @@
  */
 package co.elastic.apm.agent.grpc;
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Transaction;
 import co.elastic.apm.agent.sdk.DynamicTransformer;
 import co.elastic.apm.agent.sdk.ElasticApmInstrumentation;
@@ -92,23 +93,30 @@ public class ServerCallHandlerInstrumentation extends BaseInstrumentation {
         public static void onExit(@Advice.Thrown @Nullable Throwable thrown,
                                   @Advice.Argument(0) ServerCall<?, ?> serverCall,
                                   @Advice.Return @Nullable ServerCall.Listener<?> listener,
-                                  @Advice.Enter @Nullable Object enterTransaction) {
+                                  @Advice.Enter @Nullable Object enterContextObj) {
 
-            if (!(enterTransaction instanceof Transaction<?>)) {
+            if(enterContextObj == null) {
                 return;
             }
-            Transaction<?> transaction = (Transaction<?>) enterTransaction;
-            if (thrown != null) {
-                // terminate transaction in case of exception as it won't be stored
-                transaction.deactivate().end();
-                return;
+            ElasticContext<?> enterCtx = (ElasticContext<?>) enterContextObj;
+            Transaction<?> transaction = enterCtx.getTransaction();
+            if(transaction != null) {
+                if (thrown != null) {
+                    // terminate transaction in case of exception as it won't be stored
+                    transaction.deactivate().end();
+                    return;
+                }
+
+                if (listener != null) {
+                    DynamicTransformer.ensureInstrumented(serverCall.getClass(), SERVER_CALL_INSTRUMENTATION);
+                    DynamicTransformer.ensureInstrumented(listener.getClass(), SERVER_CALL_LISTENER_INSTRUMENTATIONS);
+                    GrpcHelper.getInstance().registerTransaction(serverCall, listener, transaction);
+                }
+            } else {
+                //Deactivate RemoteParentContext, we didn't start a transaction
+                enterCtx.deactivate();
             }
 
-            if (listener != null) {
-                DynamicTransformer.ensureInstrumented(serverCall.getClass(), SERVER_CALL_INSTRUMENTATION);
-                DynamicTransformer.ensureInstrumented(listener.getClass(), SERVER_CALL_LISTENER_INSTRUMENTATIONS);
-                GrpcHelper.getInstance().registerTransaction(serverCall, listener, transaction);
-            }
         }
     }
 }

@@ -19,16 +19,20 @@
 package co.elastic.apm.agent.httpserver;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
+import co.elastic.apm.agent.impl.TracerInternalApiUtils;
 import co.elastic.apm.agent.impl.context.Request;
 import co.elastic.apm.agent.impl.context.Response;
 import co.elastic.apm.agent.impl.context.Socket;
 import co.elastic.apm.agent.impl.context.Url;
+import co.elastic.apm.agent.tracer.GlobalTracer;
+import co.elastic.apm.agent.tracer.dispatch.TextHeaderSetter;
 import co.elastic.apm.agent.tracer.metadata.PotentiallyMultiValuedMap;
 import co.elastic.apm.agent.tracer.util.ResultUtil;
 import co.elastic.apm.agent.tracer.configuration.WebConfiguration;
 import co.elastic.apm.agent.impl.transaction.TraceContext;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.common.util.WildcardMatcher;
+import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -55,6 +59,11 @@ class HttpHandlerTest extends AbstractInstrumentationTest {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             String path = exchange.getRequestURI().getPath();
+
+            GlobalTracer.get().currentContext()
+                    .propagateContext(exchange.getResponseHeaders(), (TextHeaderSetter<Headers>)(name,value, headers) ->
+                        headers.add("echo-" + name, value)
+            , null);
 
             exchange.getResponseHeaders().add("Bar", "xyz");
             exchange.sendResponseHeaders(Integer.parseInt(path.substring(path.length() - 3)), 0);
@@ -135,6 +144,26 @@ class HttpHandlerTest extends AbstractInstrumentationTest {
 
         assertThat(response.getHeaders().get("Bar")).isEqualTo("xyz");
 
+        assertThat(reporter.getSpans()).isEmpty();
+        assertThat(reporter.getErrors()).isEmpty();
+    }
+
+
+    @Test
+    void testContextPropagationOnly() throws IOException {
+        TracerInternalApiUtils.pauseTracer(tracer);
+
+        okhttp3.Request httpRequest = new okhttp3.Request.Builder()
+                .url("http://localhost:" + httpServer.getAddress().getPort() + "/status_200")
+                .addHeader("traceparent", "00-e00fef7cc6023c8e2c02d003cf50a266-a048a11f61713b66-01")
+                .addHeader("baggage", "foo=bar")
+                .build();
+        okhttp3.Response httpResponse = httpClient.newCall(httpRequest).execute();
+        assertThat(httpResponse.code()).isEqualTo(200);
+        assertThat(httpResponse.header("echo-traceparent")).isEqualTo("00-e00fef7cc6023c8e2c02d003cf50a266-a048a11f61713b66-01");
+        assertThat(httpResponse.header("echo-baggage")).isEqualTo("foo=bar");
+
+        assertThat(reporter.getTransactions()).isEmpty();
         assertThat(reporter.getSpans()).isEmpty();
         assertThat(reporter.getErrors()).isEmpty();
     }

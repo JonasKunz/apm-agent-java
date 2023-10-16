@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.httpserver;
 
 import co.elastic.apm.agent.tracer.AbstractSpan;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.util.ResultUtil;
 import co.elastic.apm.agent.tracer.configuration.CoreConfiguration;
@@ -63,7 +64,11 @@ public class HttpHandlerAdvice {
 
         Transaction<?> transaction = tracer.startChildTransaction(exchange.getRequestHeaders(), HeadersHeaderGetter.INSTANCE, Thread.currentThread().getContextClassLoader());
         if (transaction == null) {
-            return null;
+            ElasticContext<?> remoteParent = tracer.currentContext().withRemoteParent(exchange.getRequestHeaders(), HeadersHeaderGetter.INSTANCE);
+            if(remoteParent != null) {
+                remoteParent.activate();
+            }
+            return remoteParent;
         }
 
         TransactionNameUtils.setNameFromHttpRequestPath(
@@ -127,30 +132,31 @@ public class HttpHandlerAdvice {
     }
 
     @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
-    public static void onExitHandle(@Advice.Argument(0) HttpExchange exchange, @Advice.Enter @Nullable Object transactionOrNull, @Advice.Thrown @Nullable Throwable t) {
-        if (transactionOrNull == null) {
-            return;
-        }
+    public static void onExitHandle(@Advice.Argument(0) HttpExchange exchange, @Advice.Enter @Nullable Object transactionOrRemoteParent, @Advice.Thrown @Nullable Throwable t) {
+        if (transactionOrRemoteParent instanceof Transaction<?>) {
+            Transaction<?> transaction = (Transaction<?>) transactionOrRemoteParent;
+            transaction
+                    .withResultIfUnset(ResultUtil.getResultByHttpStatus(exchange.getResponseCode()))
+                    .captureException(t);
 
-        Transaction<?> transaction = (Transaction<?>) transactionOrNull;
-        transaction
-            .withResultIfUnset(ResultUtil.getResultByHttpStatus(exchange.getResponseCode()))
-            .captureException(t);
+            Response response = transaction.getContext().getResponse();
+            response
+                    .withFinished(true)
+                    .withStatusCode(exchange.getResponseCode());
 
-        Response response = transaction.getContext().getResponse();
-        response
-            .withFinished(true)
-            .withStatusCode(exchange.getResponseCode());
-
-        if (transaction.isSampled() && coreConfiguration.isCaptureHeaders()) {
-            Headers headers = exchange.getResponseHeaders();
-            if (headers != null) {
-                for (Map.Entry<String, List<String>> header : headers.entrySet()) {
-                    response.addHeader(header.getKey(), header.getValue());
+            if (transaction.isSampled() && coreConfiguration.isCaptureHeaders()) {
+                Headers headers = exchange.getResponseHeaders();
+                if (headers != null) {
+                    for (Map.Entry<String, List<String>> header : headers.entrySet()) {
+                        response.addHeader(header.getKey(), header.getValue());
+                    }
                 }
             }
+
+            transaction.deactivate().end();
+        } else if (transactionOrRemoteParent instanceof ElasticContext<?> ) {
+            ((ElasticContext<?>)transactionOrRemoteParent).deactivate();
         }
 
-        transaction.deactivate().end();
     }
 }

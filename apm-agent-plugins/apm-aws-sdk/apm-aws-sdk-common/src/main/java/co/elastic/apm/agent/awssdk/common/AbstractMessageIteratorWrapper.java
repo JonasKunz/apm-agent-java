@@ -71,6 +71,11 @@ public abstract class AbstractMessageIteratorWrapper<Message> implements Iterato
                 transaction.deactivate().end();
                 return null;
             }
+            if(transaction == null && !tracer.currentContext().isEmpty()) {
+                //we apparently activated a propagation-only-context and need to deactivate it
+                tracer.currentContext().deactivate();
+                return null;
+            }
         } catch (Exception e) {
             logger.error("Error in AWS SQS iterator wrapper", e);
         }

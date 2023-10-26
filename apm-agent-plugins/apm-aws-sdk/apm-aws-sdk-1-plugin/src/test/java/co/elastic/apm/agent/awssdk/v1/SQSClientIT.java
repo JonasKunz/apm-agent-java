@@ -20,8 +20,10 @@ package co.elastic.apm.agent.awssdk.v1;
 
 import co.elastic.apm.agent.awssdk.common.AbstractSQSClientIT;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.Transaction;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
@@ -41,8 +43,12 @@ import org.testcontainers.containers.localstack.LocalStackContainer;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -267,6 +273,29 @@ public class SQSClientIT extends AbstractSQSClientIT {
         for (Message message : response.getMessages()) {
             executeChildSpan();
         }
+    }
+
+    @Override
+    public Map<String, String> receiveMessageContext(String queueUrl, boolean async) {
+        Map<String,String> resultContext = new HashMap<>();
+
+        ReceiveMessageRequest request = new ReceiveMessageRequest()
+            .withQueueUrl(queueUrl)
+            .withMaxNumberOfMessages(1);
+        ReceiveMessageResult response;
+        if(async) {
+            try {
+                response = sqsAsync.receiveMessageAsync(request).get(5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        } else {
+            response = sqs.receiveMessage(request);
+        }
+        for (Message message : response.getMessages()) {
+            tracer.currentContext().propagateContext(resultContext, TextHeaderMapAccessor.INSTANCE, null);
+        }
+        return resultContext;
     }
 
     @Override

@@ -29,6 +29,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -133,6 +134,28 @@ public abstract class AbstractSQSClientIT extends AbstractAwsClientIT {
         assertThat(sqsTransaction.getContext().getMessage().getBodyForRead()).isNotNull();
         assertThat(sqsTransaction.getContext().getMessage().getBodyForRead().toString()).isEqualTo(MESSAGE_BODY);
         assertThat(sqsTransaction.isChildOf(sendingSpan)).isTrue();
+    }
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"sync", "async"})
+    public void textContextPropagationOnly(String clientType) {
+        doReturn(true).when(coreConfiguration).isContextPropagationOnly();
+
+        String queueUrl = setupQueue();
+
+        sendMessage(queueUrl);
+
+        boolean async = clientType.equals("async");
+        Map<String,String> context = receiveMessageContext(queueUrl, async);
+
+        //ensure that the instrumentation doesn't leak a context
+        assertThat(tracer.currentContext().isEmpty()).isTrue();
+
+        assertThat(context.get("traceparent")).matches("00-[a-fA-F0-9]{32}-[a-fA-F0-9]{16}-01");
+
+        assertThat(reporter.getNumReportedTransactions()).isEqualTo(0);
+        assertThat(reporter.getNumReportedSpans()).isEqualTo(0);
     }
 
     @ParameterizedTest
@@ -306,6 +329,8 @@ public abstract class AbstractSQSClientIT extends AbstractAwsClientIT {
     public abstract void executeQueueExclusion(String queueUrl, String ignoredQueueUrl);
 
     public abstract void executeAsyncQueueExclusion(String queueUrl, String ignoredQueueUrl);
+
+    public abstract Map<String, String> receiveMessageContext(String queueUrl, boolean async);
 
     protected abstract String setupQueue();
 

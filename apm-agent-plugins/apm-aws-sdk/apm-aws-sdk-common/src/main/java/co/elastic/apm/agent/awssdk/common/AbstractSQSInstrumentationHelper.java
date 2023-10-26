@@ -22,6 +22,7 @@ import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import co.elastic.apm.agent.tracer.AbstractSpan;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Span;
 import co.elastic.apm.agent.tracer.Tracer;
 import co.elastic.apm.agent.tracer.Transaction;
@@ -164,6 +165,11 @@ public abstract class AbstractSQSInstrumentationHelper<R, C, MessageT> extends A
 
                     if (transaction.isSampled()) {
                         setMessageContext(sqsMessage, queueName, transaction.getContext().getMessage());
+                    }
+                } else {
+                    ElasticContext<?> propagationContext = tracer.currentContext().withContextPropagationOnly(sqsMessage, headerGetter);
+                    if(propagationContext != null) {
+                        propagationContext.activate();
                     }
                 }
             }

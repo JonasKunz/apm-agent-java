@@ -20,9 +20,11 @@ package co.elastic.apm.agent.awssdk.v2;
 
 import co.elastic.apm.agent.awssdk.common.AbstractSQSClientIT;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
+import com.amazonaws.services.sqs.model.ReceiveMessageResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
@@ -46,6 +48,9 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import javax.annotation.Nullable;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -329,6 +334,26 @@ public class SQSClientIT extends AbstractSQSClientIT {
         for (Message message : response.messages()) {
             executeChildSpan();
         }
+    }
+
+    @Override
+    public Map<String, String> receiveMessageContext(String queueUrl, boolean async) {
+        Map<String,String> resultContext = new HashMap<>();
+
+        ReceiveMessageResponse response;
+        if(async) {
+            try {
+                response = sqsAsync.receiveMessage(ReceiveMessageRequest.builder().maxNumberOfMessages(1).queueUrl(queueUrl).build()).join();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        } else {
+            response = sqs.receiveMessage(ReceiveMessageRequest.builder().maxNumberOfMessages(1).queueUrl(queueUrl).build());
+        }
+        for (Message message : response.messages()) {
+            tracer.currentContext().propagateContext(resultContext, TextHeaderMapAccessor.INSTANCE, null);
+        }
+        return resultContext;
     }
 
     @Override

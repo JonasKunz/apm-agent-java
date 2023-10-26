@@ -24,6 +24,8 @@ public interface DubboTestApi {
 
     String normalReturn(String arg1, Integer arg2);
 
+    String traceparentEcho();
+
     String throwBizException(String arg1);
 
     String timeout(String arg);

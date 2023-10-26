@@ -138,6 +138,18 @@ public abstract class AbstractDubboInstrumentationTest extends AbstractInstrumen
     }
 
     @Test
+    public void testContextPropagationOnly() {
+        doReturn(true).when(coreConfig).isContextPropagationOnly();
+
+        DubboTestApi dubboTestApi = getDubboTestApi();
+        String traceparent = dubboTestApi.traceparentEcho();
+        assertThat(traceparent).matches("00-[a-fA-F0-9]{32}-[a-fA-F0-9]{16}-01");
+
+        // transaction on the receiving side
+        assertThat(reporter.getTransactions()).isEmpty();
+    }
+
+    @Test
     public void testBizException() {
         DubboTestApi dubboTestApi = getDubboTestApi();
         try {

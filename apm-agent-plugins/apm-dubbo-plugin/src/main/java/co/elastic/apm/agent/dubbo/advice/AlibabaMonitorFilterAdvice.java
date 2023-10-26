@@ -21,6 +21,7 @@ package co.elastic.apm.agent.dubbo.advice;
 import co.elastic.apm.agent.dubbo.helper.AlibabaDubboTextMapPropagator;
 import co.elastic.apm.agent.dubbo.helper.DubboTraceHelper;
 import co.elastic.apm.agent.tracer.AbstractSpan;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.Outcome;
 import co.elastic.apm.agent.tracer.Tracer;
@@ -66,6 +67,12 @@ public class AlibabaMonitorFilterAdvice {
                 transaction.activate();
                 DubboTraceHelper.fillTransaction(transaction, invocation.getInvoker().getInterface(), invocation.getMethodName());
                 return transaction;
+            } else {
+                ElasticContext<?> propOnlyCtx = tracer.currentContext().withContextPropagationOnly(context, AlibabaDubboTextMapPropagator.INSTANCE);
+                if(propOnlyCtx != null) {
+                    propOnlyCtx.activate();
+                    return propOnlyCtx;
+                }
             }
         }
         return null;
@@ -73,26 +80,26 @@ public class AlibabaMonitorFilterAdvice {
 
     @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
     public static void onExitFilterInvoke(@Advice.Return @Nullable Result result,
-                                          @Advice.Enter @Nullable Object spanObj,
+                                          @Advice.Enter @Nullable Object spanOrCtxObj,
                                           @Advice.Thrown @Nullable Throwable t) {
+        if(spanOrCtxObj instanceof AbstractSpan<?>) {
+            AbstractSpan<?> span = (AbstractSpan<?>) spanOrCtxObj;
 
-        AbstractSpan<?> span = (AbstractSpan<?>) spanObj;
-        if (span == null) {
-            return;
-        }
+            Throwable resultException = null;
+            if (result != null) { // will be null in case of thrown exception
+                resultException = result.getException();
+            }
+            span.captureException(t)
+                .captureException(resultException)
+                .withOutcome(t != null || resultException != null ? Outcome.FAILURE : Outcome.SUCCESS)
+                .deactivate();
 
-        Throwable resultException = null;
-        if (result != null) { // will be null in case of thrown exception
-            resultException = result.getException();
+            if (!(RpcContext.getContext().getFuture() instanceof FutureAdapter)) {
+                span.end();
+            }
+            // else: end when ResponseCallback is called (see AlibabaResponseCallbackInstrumentation)
+        } else if (spanOrCtxObj instanceof ElasticContext<?>) {
+            ((ElasticContext<?>)spanOrCtxObj).deactivate();
         }
-        span.captureException(t)
-            .captureException(resultException)
-            .withOutcome(t != null || resultException != null ? Outcome.FAILURE : Outcome.SUCCESS)
-            .deactivate();
-
-        if (!(RpcContext.getContext().getFuture() instanceof FutureAdapter)) {
-            span.end();
-        }
-        // else: end when ResponseCallback is called (see AlibabaResponseCallbackInstrumentation)
     }
 }

@@ -18,9 +18,11 @@
  */
 package co.elastic.apm.agent.dubbo.advice;
 
+import co.elastic.apm.agent.dubbo.helper.AlibabaDubboTextMapPropagator;
 import co.elastic.apm.agent.dubbo.helper.ApacheDubboTextMapPropagator;
 import co.elastic.apm.agent.dubbo.helper.DubboTraceHelper;
 import co.elastic.apm.agent.tracer.AbstractSpan;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.Outcome;
 import co.elastic.apm.agent.tracer.Span;
@@ -66,6 +68,12 @@ public class ApacheMonitorFilterAdvice {
                 transaction.activate();
                 DubboTraceHelper.fillTransaction(transaction, invocation.getInvoker().getInterface(), invocation.getMethodName());
                 return transaction;
+            } else {
+                ElasticContext<?> propOnlyCtx = tracer.currentContext().withContextPropagationOnly(context, ApacheDubboTextMapPropagator.INSTANCE);
+                if(propOnlyCtx != null) {
+                    propOnlyCtx.activate();
+                    return propOnlyCtx;
+                }
             }
         }
         return null;
@@ -75,28 +83,28 @@ public class ApacheMonitorFilterAdvice {
     public static void onExitFilterInvoke(@Advice.Argument(0) Invoker<?> invoker,
                                           @Advice.Argument(1) Invocation invocation,
                                           @Advice.Return @Nullable Result result,
-                                          @Advice.Enter @Nullable final Object spanObj,
+                                          @Advice.Enter @Nullable final Object spanOrCtxObj,
                                           @Advice.Thrown @Nullable Throwable thrown) {
 
-        AbstractSpan<?> span = (AbstractSpan<?>) spanObj;
-        if (span == null) {
-            return;
-        }
+        if(spanOrCtxObj instanceof AbstractSpan<?>) {
+            AbstractSpan<?> span = (AbstractSpan<?>) spanOrCtxObj;
 
-        span.captureException(thrown)
-            .deactivate();
+            span.captureException(thrown)
+                .deactivate();
 
-        if (result instanceof AsyncRpcResult) {
-            RpcContext.getContext().set(DubboTraceHelper.SPAN_KEY, span);
-            if(invocation instanceof RpcInvocation){
-                RpcContext.getContext().set(DubboTraceHelper.INVOKE_MODE, ((RpcInvocation) invocation).getInvokeMode());
+            if (result instanceof AsyncRpcResult) {
+                RpcContext.getContext().set(DubboTraceHelper.SPAN_KEY, span);
+                if (invocation instanceof RpcInvocation) {
+                    RpcContext.getContext().set(DubboTraceHelper.INVOKE_MODE, ((RpcInvocation) invocation).getInvokeMode());
+                }
+                result.whenCompleteWithContext(AsyncCallback.INSTANCE);
+            } else {
+                span.withSync(true)
+                    .end();
             }
-            result.whenCompleteWithContext(AsyncCallback.INSTANCE);
-        } else {
-            span.withSync(true)
-                .end();
+        } else if (spanOrCtxObj instanceof ElasticContext<?>) {
+            ((ElasticContext<?>)spanOrCtxObj).deactivate();
         }
-
     }
 
     public static class AsyncCallback implements BiConsumer<Result, Throwable> {

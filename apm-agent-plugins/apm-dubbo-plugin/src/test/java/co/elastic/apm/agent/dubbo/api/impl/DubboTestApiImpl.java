@@ -21,14 +21,18 @@ package co.elastic.apm.agent.dubbo.api.impl;
 import co.elastic.apm.agent.dubbo.api.AnotherApi;
 import co.elastic.apm.agent.dubbo.api.DubboTestApi;
 import co.elastic.apm.agent.dubbo.api.exception.BizException;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.Outcome;
+import co.elastic.apm.agent.tracer.Tracer;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.MappingBuilder;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import org.apache.dubbo.rpc.AsyncContext;
 import org.apache.dubbo.rpc.RpcContext;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -63,6 +67,14 @@ public class DubboTestApiImpl implements DubboTestApi {
     @Override
     public String normalReturn(String arg1, Integer arg2) {
         return arg1 + arg2;
+    }
+
+    @Override
+    public String traceparentEcho() {
+        Tracer tracer = GlobalTracer.get();
+        Map<String,String> headers = new HashMap<>();
+        tracer.currentContext().propagateContext(headers, TextHeaderMapAccessor.INSTANCE, null);
+        return headers.get("traceparent");
     }
 
     @Override

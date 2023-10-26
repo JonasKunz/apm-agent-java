@@ -100,21 +100,20 @@ public class ServerCallHandlerInstrumentation extends BaseInstrumentation {
             }
             ElasticContext<?> enterCtx = (ElasticContext<?>) enterContextObj;
             Transaction<?> transaction = enterCtx.getTransaction();
-            if(transaction != null) {
-                if (thrown != null) {
-                    // terminate transaction in case of exception as it won't be stored
+            if (thrown != null) {
+                // terminate transaction in case of exception as it won't be stored
+                if(transaction != null) {
                     transaction.deactivate().end();
-                    return;
+                } else {
+                    enterCtx.deactivate();
                 }
+                return;
+            }
 
-                if (listener != null) {
-                    DynamicTransformer.ensureInstrumented(serverCall.getClass(), SERVER_CALL_INSTRUMENTATION);
-                    DynamicTransformer.ensureInstrumented(listener.getClass(), SERVER_CALL_LISTENER_INSTRUMENTATIONS);
-                    GrpcHelper.getInstance().registerTransaction(serverCall, listener, transaction);
-                }
-            } else {
-                //Deactivate RemoteParentContext, we didn't start a transaction
-                enterCtx.deactivate();
+            if (listener != null) {
+                DynamicTransformer.ensureInstrumented(serverCall.getClass(), SERVER_CALL_INSTRUMENTATION);
+                DynamicTransformer.ensureInstrumented(listener.getClass(), SERVER_CALL_LISTENER_INSTRUMENTATIONS);
+                GrpcHelper.getInstance().registerContext(serverCall, listener, enterCtx);
             }
 
         }

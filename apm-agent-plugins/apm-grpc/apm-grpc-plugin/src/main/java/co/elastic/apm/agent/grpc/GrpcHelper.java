@@ -71,14 +71,14 @@ public class GrpcHelper {
     private final ReferenceCountedMap<ClientCall.Listener<?>, Span<?>> clientCallListenerSpans;
 
     /**
-     * Map of all in-flight {@link Transaction} with {@link ServerCall.Listener} instance as key.
+     * Map of all in-flight {@link ElasticContext} with {@link ServerCall.Listener} instance as key.
      */
-    private final ReferenceCountedMap<ServerCall.Listener<?>, Transaction<?>> serverListenerTransactions;
+    private final ReferenceCountedMap<ServerCall.Listener<?>, ElasticContext<?>> serverListenerContext;
 
     /**
-     * Map of all in-flight {@link Transaction} with {@link ServerCall} instance as key.
+     * Map of all in-flight {@link ElasticContext} with {@link ServerCall} instance as key.
      */
-    private final ReferenceCountedMap<ServerCall<?, ?>, Transaction<?>> serverCallTransactions;
+    private final ReferenceCountedMap<ServerCall<?, ?>, ElasticContext<?>> serverCallContext;
 
     /**
      * gRPC header cache used to minimize allocations
@@ -96,8 +96,8 @@ public class GrpcHelper {
         delayedClientCallSpans = tracer.newReferenceCountedMap();
         clientCallListenerSpans = tracer.newReferenceCountedMap();
 
-        serverListenerTransactions = tracer.newReferenceCountedMap();
-        serverCallTransactions = tracer.newReferenceCountedMap();
+        serverListenerContext = tracer.newReferenceCountedMap();
+        serverCallContext = tracer.newReferenceCountedMap();
 
         headerCache = WeakConcurrent.buildMap();
 
@@ -136,11 +136,11 @@ public class GrpcHelper {
 
         Transaction<?> transaction = tracer.startChildTransaction(headers, headerGetter, cl);
         if (transaction == null) {
-            ElasticContext<?> remoteParent = tracer.currentContext().withRemoteParent(headers, headerGetter);
-            if(remoteParent != null) {
-                remoteParent.activate();
+            ElasticContext<?> propOnlyCtx = tracer.currentContext().withContextPropagationOnly(headers, headerGetter);
+            if(propOnlyCtx != null) {
+                propOnlyCtx.activate();
             }
-            return remoteParent;
+            return propOnlyCtx;
         }
 
         transaction.withName(methodDescriptor.getFullMethodName())
@@ -157,12 +157,12 @@ public class GrpcHelper {
      *
      * @param serverCall  server call
      * @param listener    server call listener
-     * @param transaction transaction
+     * @param context the context to propagate. If it contains a transaction, the transaction will be ended
      */
-    public void registerTransaction(ServerCall<?, ?> serverCall, ServerCall.Listener<?> listener, Transaction<?> transaction) {
-        serverCallTransactions.put(serverCall, transaction);
-        serverListenerTransactions.put(listener, transaction);
-        transaction.deactivate();
+    public void registerContext(ServerCall<?, ?> serverCall, ServerCall.Listener<?> listener, ElasticContext<?> context) {
+        serverCallContext.put(serverCall, context);
+        serverListenerContext.put(listener, context);
+        context.deactivate();
     }
 
     /**
@@ -174,8 +174,8 @@ public class GrpcHelper {
      * @param serverCall server call
      */
     public void exitServerCall(Status status, @Nullable Throwable thrown, ServerCall<?, ?> serverCall) {
-        Transaction<?> transaction = serverCallTransactions.remove(serverCall);
-
+        ElasticContext<?> context = serverCallContext.remove(serverCall);
+        Transaction<?> transaction = context == null ? null : context.getTransaction();
         if (transaction != null) {
             // there are multiple ways to terminate transaction, which aren't mutually exclusive
             // thus we have to check if outcome has already been set to keep the first:
@@ -228,61 +228,63 @@ public class GrpcHelper {
      * @return transaction, or {@literal null} if there is none
      */
     @Nullable
-    public Transaction<?> enterServerListenerMethod(ServerCall.Listener<?> listener) {
-        Transaction<?> transaction = serverListenerTransactions.get(listener);
-        if (transaction != null) {
-            transaction.activate();
+    public ElasticContext<?> enterServerListenerMethod(ServerCall.Listener<?> listener) {
+        ElasticContext<?> context = serverListenerContext.get(listener);
+        if (context != null) {
+            context.activate();
         }
-        return transaction;
+        return context;
     }
 
     /**
      * Deactivates (and terminates) transaction on ending server call listener method
      *
-     * @param thrown          thrown exception
-     * @param listener        server call listener
-     * @param transaction     transaction
-     * @param terminateStatus status to use to terminate transaction, will not terminate it if {@literal null}
+     * @param thrown            thrown exception
+     * @param listener          server call listener
+     * @param propagatedContext the context of this operation. If it contains a Transaction, that transaction will be ended.
+     * @param terminateStatus   status to use to terminate transaction, will not terminate it if {@literal null}
      */
     public void exitServerListenerMethod(@Nullable Throwable thrown,
                                          ServerCall.Listener<?> listener,
-                                         @Nullable Transaction<?> transaction,
+                                         @Nullable ElasticContext<?> propagatedContext,
                                          @Nullable Status terminateStatus) {
 
-        if (transaction == null) {
+        if(propagatedContext == null) {
             return;
         }
-
-        transaction
-            .captureException(thrown)
-            .deactivate();
-
+        propagatedContext.deactivate();
         if (thrown == null && terminateStatus == null) {
             return;
         }
+        Transaction<?> transaction = propagatedContext.getTransaction();
+        serverListenerContext.remove(listener);
+        if (transaction != null) {
 
-        boolean setTerminateStatus = false;
-        if (null != thrown) {
-            // when there is a runtime exception thrown in one of the listener methods the calling code will catch it
-            // and make this the last listener method called
-            terminateStatus = Status.fromThrowable(thrown);
-            setTerminateStatus = true;
+            transaction.captureException(thrown);
 
-        } else if (transaction.getOutcome() == Outcome.UNKNOWN) {
-            setTerminateStatus = true;
+            boolean setTerminateStatus = false;
+            if (null != thrown) {
+                // when there is a runtime exception thrown in one of the listener methods the calling code will catch it
+                // and make this the last listener method called
+                terminateStatus = Status.fromThrowable(thrown);
+                setTerminateStatus = true;
+
+            } else if (transaction.getOutcome() == Outcome.UNKNOWN) {
+                setTerminateStatus = true;
+            }
+
+            if (setTerminateStatus) {
+                transaction.withResultIfUnset(terminateStatus.getCode().name());
+                transaction.withOutcome(toServerOutcome(terminateStatus));
+            }
+
+            // With some implementations we might get called more than once with an extra onCancel before/after
+            // onComplete have been called, thus we have to guard against ending transaction more than once
+            if (!transaction.isFinished()) {
+                transaction.end();
+            }
         }
 
-        if (setTerminateStatus) {
-            transaction.withResultIfUnset(terminateStatus.getCode().name());
-            transaction.withOutcome(toServerOutcome(terminateStatus));
-        }
-
-        // With some implementations we might get called more than once with an extra onCancel before/after
-        // onComplete have been called, thus we have to guard against ending transaction more than once
-        if (!transaction.isFinished()) {
-            transaction.end();
-        }
-        serverListenerTransactions.remove(listener);
     }
 
     // exit span management (client part)

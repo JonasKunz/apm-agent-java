@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.httpserver;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.impl.TracerInternalApiUtils;
 import co.elastic.apm.agent.impl.context.Request;
 import co.elastic.apm.agent.impl.context.Response;
@@ -151,17 +152,25 @@ class HttpHandlerTest extends AbstractInstrumentationTest {
 
     @Test
     void testContextPropagationOnly() throws IOException {
-        TracerInternalApiUtils.pauseTracer(tracer);
+        CoreConfiguration config = tracer.getConfig(CoreConfiguration.class);
+        doReturn(true).when(config).isContextPropagationOnly();
 
-        okhttp3.Request httpRequest = new okhttp3.Request.Builder()
+        okhttp3.Request childRequest = new okhttp3.Request.Builder()
                 .url("http://localhost:" + httpServer.getAddress().getPort() + "/status_200")
                 .addHeader("traceparent", "00-e00fef7cc6023c8e2c02d003cf50a266-a048a11f61713b66-01")
                 .addHeader("baggage", "foo=bar")
                 .build();
-        okhttp3.Response httpResponse = httpClient.newCall(httpRequest).execute();
-        assertThat(httpResponse.code()).isEqualTo(200);
-        assertThat(httpResponse.header("echo-traceparent")).isEqualTo("00-e00fef7cc6023c8e2c02d003cf50a266-a048a11f61713b66-01");
-        assertThat(httpResponse.header("echo-baggage")).isEqualTo("foo=bar");
+        okhttp3.Response childResponse = httpClient.newCall(childRequest).execute();
+        assertThat(childResponse.code()).isEqualTo(200);
+        assertThat(childResponse.header("echo-traceparent")).isEqualTo("00-e00fef7cc6023c8e2c02d003cf50a266-a048a11f61713b66-01");
+        assertThat(childResponse.header("echo-baggage")).isEqualTo("foo=bar");
+
+        okhttp3.Request rootRequest = new okhttp3.Request.Builder()
+            .url("http://localhost:" + httpServer.getAddress().getPort() + "/status_200")
+            .build();
+        okhttp3.Response rootResponse = httpClient.newCall(rootRequest).execute();
+        assertThat(rootResponse.code()).isEqualTo(200);
+        assertThat(rootResponse.header("echo-traceparent")).matches("00-[a-fA-F0-9]{32}-[a-fA-F0-9]{16}-01");
 
         assertThat(reporter.getTransactions()).isEmpty();
         assertThat(reporter.getSpans()).isEmpty();

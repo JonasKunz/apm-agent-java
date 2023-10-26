@@ -18,6 +18,9 @@
  */
 package co.elastic.apm.agent.grpc.testapp;
 
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
+import co.elastic.apm.agent.tracer.ElasticContext;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.util.ExecutorUtils;
 import io.grpc.BindableService;
 import io.grpc.Metadata;
@@ -33,7 +36,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +47,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public abstract class HelloServer<Req,Rep> {
 
@@ -206,6 +212,7 @@ public abstract class HelloServer<Req,Rep> {
 
            logVerbose("start processing");
 
+            ElasticContext<?> elasticContext = GlobalTracer.get().currentContext();
             if (depth > 0) {
                 int nextDepth = depth - 1;
                 String nestedResult = client.sayHello(userName, nextDepth);
@@ -224,9 +231,16 @@ public abstract class HelloServer<Req,Rep> {
                     logVerbose("trigger a server exception aka 'not so graceful error'");
                     // this will be translated into a Status#UNKNOWN
                     throw new RuntimeException("boom");
+                } else if ("context-echo".equals(userName)) {
+                    Map<String,String> headers = new HashMap<>();
+                    elasticContext.propagateContext(headers, TextHeaderMapAccessor.INSTANCE, null);
+                    message = headers.entrySet().stream()
+                        .map(entry -> entry.getKey()+": "+entry.getValue())
+                        .collect(Collectors.joining(","));
+                } else {
+                    message = String.format("hello(%s)", userName);
                 }
 
-                message = String.format("hello(%s)", userName);
             }
 
             logVerbose("end of processing, response not sent yet");

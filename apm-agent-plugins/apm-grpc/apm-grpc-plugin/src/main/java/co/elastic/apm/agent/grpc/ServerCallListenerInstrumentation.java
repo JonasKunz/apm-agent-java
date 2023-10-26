@@ -18,6 +18,7 @@
  */
 package co.elastic.apm.agent.grpc;
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Transaction;
 import co.elastic.apm.agent.sdk.DynamicTransformer;
 import io.grpc.ServerCall;
@@ -90,10 +91,10 @@ public abstract class ServerCallListenerInstrumentation extends BaseInstrumentat
             @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
             public static void onExit(@Advice.Thrown @Nullable Throwable thrown,
                                       @Advice.This ServerCall.Listener<?> listener,
-                                      @Advice.Enter @Nullable Object transaction) {
+                                      @Advice.Enter @Nullable Object context) {
 
-                if (transaction instanceof Transaction<?>) {
-                    GrpcHelper.getInstance().exitServerListenerMethod(thrown, listener, (Transaction<?>) transaction, null);
+                if (context instanceof ElasticContext<?>) {
+                    GrpcHelper.getInstance().exitServerListenerMethod(thrown, listener, (ElasticContext<?>) context, null);
                 }
             }
         }
@@ -125,10 +126,10 @@ public abstract class ServerCallListenerInstrumentation extends BaseInstrumentat
             @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
             public static void onExit(@Advice.Thrown @Nullable Throwable thrown,
                                       @Advice.This ServerCall.Listener<?> listener,
-                                      @Advice.Enter @Nullable Object transaction) {
+                                      @Advice.Enter @Nullable Object context) {
 
-                if (transaction instanceof Transaction<?>) {
-                    GrpcHelper.getInstance().exitServerListenerMethod(thrown, listener, (Transaction<?>) transaction, Status.CANCELLED);
+                if (context instanceof ElasticContext<?>) {
+                    GrpcHelper.getInstance().exitServerListenerMethod(thrown, listener, (ElasticContext<?>) context, Status.CANCELLED);
                 }
             }
         }
@@ -160,10 +161,10 @@ public abstract class ServerCallListenerInstrumentation extends BaseInstrumentat
             @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
             public static void onExit(@Advice.Thrown @Nullable Throwable thrown,
                                       @Advice.This ServerCall.Listener<?> listener,
-                                      @Advice.Enter @Nullable Object transaction) {
+                                      @Advice.Enter @Nullable Object context) {
 
-                if (transaction instanceof Transaction<?>) {
-                    GrpcHelper.getInstance().exitServerListenerMethod(thrown, listener, (Transaction<?>) transaction, Status.OK);
+                if (context instanceof ElasticContext<?>) {
+                    GrpcHelper.getInstance().exitServerListenerMethod(thrown, listener, (ElasticContext<?>) context, Status.OK);
                 }
             }
         }

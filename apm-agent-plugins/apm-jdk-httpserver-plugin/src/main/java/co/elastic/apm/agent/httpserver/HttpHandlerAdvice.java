@@ -64,11 +64,11 @@ public class HttpHandlerAdvice {
 
         Transaction<?> transaction = tracer.startChildTransaction(exchange.getRequestHeaders(), HeadersHeaderGetter.INSTANCE, Thread.currentThread().getContextClassLoader());
         if (transaction == null) {
-            ElasticContext<?> remoteParent = tracer.currentContext().withRemoteParent(exchange.getRequestHeaders(), HeadersHeaderGetter.INSTANCE);
-            if(remoteParent != null) {
-                remoteParent.activate();
+            ElasticContext<?> propOnlyCtx = tracer.currentContext().withContextPropagationOnly(exchange.getRequestHeaders(), HeadersHeaderGetter.INSTANCE);
+            if(propOnlyCtx != null) {
+                propOnlyCtx.activate();
             }
-            return remoteParent;
+            return propOnlyCtx;
         }
 
         TransactionNameUtils.setNameFromHttpRequestPath(

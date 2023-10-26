@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.grpc;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.grpc.testapp.GrpcApp;
 import co.elastic.apm.agent.grpc.testapp.GrpcAppProvider;
 import co.elastic.apm.agent.tracer.Outcome;
@@ -33,6 +34,7 @@ import javax.annotation.Nullable;
 import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 
 public abstract class AbstractGrpcServerInstrumentationTest extends AbstractInstrumentationTest {
 
@@ -60,6 +62,16 @@ public abstract class AbstractGrpcServerInstrumentationTest extends AbstractInst
             .isEqualTo("hello(bob)");
 
         checkUnaryTransactionSuccess(getFirstTransaction());
+    }
+
+    @Test
+    void contextPropagationOnly() {
+        assertThat(reporter.getTransactions()).isEmpty();
+
+        doReturn(true).when(tracer.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+
+        assertThat(app.sayHello("context-echo", 0))
+            .contains("traceparent: 00-");
     }
 
     @Test

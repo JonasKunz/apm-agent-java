@@ -353,6 +353,28 @@ public class KafkaIT extends AbstractInstrumentationTest {
         assertThat(objectPoolFactory.getSpanPool().getRequestedObjectCount()).isEqualTo(spanCount);
     }
 
+    @Test
+    public void testContextPropagationOnly() {
+        tracer.currentTransaction().deactivate().end();
+        reporter.reset();
+        consumerThread.setIterationMode(RecordIterationMode.ITERABLE_FOR);
+        doReturn(true).when(coreConfiguration).isContextPropagationOnly();
+
+        ProducerRecord<String, String> record = new ProducerRecord<>(REQUEST_TOPIC, 0, REQUEST_KEY, FIRST_MESSAGE_VALUE);
+        producer.send(record);
+
+        List<ConsumerRecord<String, String>> replies = awaitReplyRecords(5000, 1);
+        assertThat(replies).hasSize(1);
+
+        ConsumerRecord<String, String> received = replies.get(0);
+        assertThat(received.value()).isEqualTo(FIRST_MESSAGE_VALUE);
+
+        String receivedTraceParent = new String(received.headers().lastHeader("traceparent").value());
+
+        assertThat(receivedTraceParent).isNotEmpty();
+        assertThat(reporter.getTransactions()).isEmpty();
+    }
+
     private void sendTwoRecordsAndConsumeReplies() {
         final StringBuilder callback = new StringBuilder();
         ProducerRecord<String, String> record1 = new ProducerRecord<>(REQUEST_TOPIC, 0, REQUEST_KEY, FIRST_MESSAGE_VALUE);

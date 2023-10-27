@@ -22,6 +22,7 @@ import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.sdk.internal.util.PrivilegedActionUtils;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Tracer;
 import co.elastic.apm.agent.tracer.Transaction;
 import co.elastic.apm.agent.tracer.configuration.CoreConfiguration;
@@ -43,6 +44,8 @@ class ConsumerRecordsIteratorWrapper implements Iterator<ConsumerRecord<?, ?>> {
     private final CoreConfiguration coreConfiguration;
     private final MessagingConfiguration messagingConfiguration;
 
+    private final ThreadLocal<ElasticContext<?>> startedContext = new ThreadLocal<>();
+
     public ConsumerRecordsIteratorWrapper(Iterator<ConsumerRecord<?, ?>> delegate, Tracer tracer) {
         this.delegate = delegate;
         this.tracer = tracer;
@@ -58,9 +61,15 @@ class ConsumerRecordsIteratorWrapper implements Iterator<ConsumerRecord<?, ?>> {
 
     public void endCurrentTransaction() {
         try {
-            Transaction<?> transaction = tracer.currentTransaction();
-            if (transaction != null && "messaging".equals(transaction.getType())) {
-                transaction.deactivate().end();
+            ElasticContext<?> context = startedContext.get();
+            if(context != null) {
+                startedContext.remove();
+                if(context.getTransaction() != null) {
+                    // end our previously started messaging transaction
+                    context.getTransaction().deactivate().end();
+                } else {
+                    context.deactivate(); //propagation-only context needs to be ended aswell
+                }
             }
         } catch (Exception e) {
             logger.error("Error in Kafka iterator wrapper", e);
@@ -77,6 +86,7 @@ class ConsumerRecordsIteratorWrapper implements Iterator<ConsumerRecord<?, ?>> {
                 Transaction<?> transaction = tracer.startChildTransaction(record, KafkaRecordHeaderAccessor.instance(), PrivilegedActionUtils.getClassLoader(ConsumerRecordsIteratorWrapper.class));
                 if (transaction != null) {
                     transaction.withType("messaging").withName("Kafka record from " + topic).activate();
+                    startedContext.set(tracer.currentContext());
                     transaction.setFrameworkName(FRAMEWORK_NAME);
 
                     Message message = transaction.getContext().getMessage();
@@ -98,6 +108,12 @@ class ConsumerRecordsIteratorWrapper implements Iterator<ConsumerRecord<?, ?>> {
                     if (transaction.isSampled() && coreConfiguration.getCaptureBody() != CoreConfiguration.EventType.OFF) {
                         message.appendToBody("key=").appendToBody(String.valueOf(record.key())).appendToBody("; ")
                             .appendToBody("value=").appendToBody(String.valueOf(record.value()));
+                    }
+                } else {
+                    ElasticContext<?> propagationOnlyCtx = tracer.currentContext().withContextPropagationOnly(record, KafkaRecordHeaderAccessor.instance());
+                    if(propagationOnlyCtx != null) {
+                        propagationOnlyCtx.activate();
+                        startedContext.set(propagationOnlyCtx);
                     }
                 }
             }

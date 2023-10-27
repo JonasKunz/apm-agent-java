@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.rabbitmq;
 
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Tracer;
 import co.elastic.apm.agent.tracer.Transaction;
 import co.elastic.apm.agent.sdk.logging.Logger;
@@ -35,6 +36,8 @@ public class MessageBatchIteratorWrapper implements Iterator<Message> {
     private final Tracer tracer;
     private final SpringAmqpTransactionHelper transactionHelper;
 
+    private final ThreadLocal<ElasticContext<?>> activatedContext = new ThreadLocal<>();
+
     public MessageBatchIteratorWrapper(Iterator<Message> delegate, Tracer tracer, SpringAmqpTransactionHelper transactionHelper) {
         this.delegate = delegate;
         this.tracer = tracer;
@@ -49,9 +52,14 @@ public class MessageBatchIteratorWrapper implements Iterator<Message> {
 
     public void endCurrentTransaction() {
         try {
-            Transaction<?> transaction = tracer.currentTransaction();
-            if (transaction != null && "messaging".equals(transaction.getType())) {
-                transaction.deactivate().end();
+            ElasticContext<?> activated = activatedContext.get();
+            if(activated != null) {
+                activatedContext.remove();
+                Transaction<?> transaction = activated.getTransaction();
+                activated.deactivate();
+                if (transaction != null) {
+                    transaction.end();
+                }
             }
         } catch (Exception e) {
             logger.error("Error in Spring AMQP iterator wrapper", e);
@@ -64,7 +72,10 @@ public class MessageBatchIteratorWrapper implements Iterator<Message> {
 
         Message message = delegate.next();
         try {
-            transactionHelper.createTransaction(message, AmqpConstants.SPRING_AMQP_TRANSACTION_PREFIX);
+            ElasticContext<?> ctx = transactionHelper.createAndActivateContext(message, AmqpConstants.SPRING_AMQP_TRANSACTION_PREFIX);
+            if(ctx != null) {
+                activatedContext.set(ctx);
+            }
         } catch (Throwable throwable) {
             logger.error("Error in transaction creation based on Spring AMQP batch message", throwable);
         }

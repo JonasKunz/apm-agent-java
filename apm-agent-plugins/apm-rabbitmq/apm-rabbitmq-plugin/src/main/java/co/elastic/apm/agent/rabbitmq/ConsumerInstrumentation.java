@@ -18,6 +18,7 @@
  */
 package co.elastic.apm.agent.rabbitmq;
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Transaction;
 import co.elastic.apm.agent.rabbitmq.header.RabbitMQTextHeaderGetter;
 import co.elastic.apm.agent.tracer.metadata.Message;
@@ -103,7 +104,11 @@ public class ConsumerInstrumentation extends RabbitmqBaseInstrumentation {
 
             transaction = tracer.startChildTransaction(properties, RabbitMQTextHeaderGetter.INSTANCE, PrivilegedActionUtils.getClassLoader(originClazz));
             if (transaction == null) {
-                return null;
+                ElasticContext<?> propagationOnly = tracer.currentContext().withContextPropagationOnly(properties, RabbitMQTextHeaderGetter.INSTANCE);
+                if(propagationOnly != null) {
+                    propagationOnly.activate();
+                }
+                return propagationOnly;
             }
 
             transaction.withType("messaging")
@@ -120,13 +125,15 @@ public class ConsumerInstrumentation extends RabbitmqBaseInstrumentation {
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class, inline = false)
-        public static void afterHandleDelivery(@Advice.Enter @Nullable final Object transactionObject,
+        public static void afterHandleDelivery(@Advice.Enter @Nullable final Object transactionOrCtxObject,
                                                @Advice.Thrown @Nullable final Throwable throwable) {
-            if (transactionObject instanceof Transaction<?>) {
-                Transaction<?> transaction = (Transaction<?>) transactionObject;
+            if (transactionOrCtxObject instanceof Transaction<?>) {
+                Transaction<?> transaction = (Transaction<?>) transactionOrCtxObject;
                 transaction.captureException(throwable)
                     .deactivate()
                     .end();
+            } else if (transactionOrCtxObject instanceof ElasticContext<?>) {
+                ((ElasticContext<?>)transactionOrCtxObject).deactivate();
             }
         }
     }

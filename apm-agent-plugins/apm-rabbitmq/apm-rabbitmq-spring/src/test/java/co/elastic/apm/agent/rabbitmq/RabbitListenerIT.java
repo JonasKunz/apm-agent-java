@@ -18,15 +18,48 @@
  */
 package co.elastic.apm.agent.rabbitmq;
 
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.rabbitmq.config.RabbitListenerConfiguration;
+import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
+import org.assertj.core.api.Assertions;
+import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringRunner;
+
+import java.util.Map;
+
+import static co.elastic.apm.agent.rabbitmq.TestConstants.TOPIC_EXCHANGE_NAME;
+import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.doReturn;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
 @ContextConfiguration(classes = {RabbitListenerConfiguration.class}, initializers = {AbstractRabbitMqTest.Initializer.class})
 public class RabbitListenerIT extends AbstractRabbitMqTest {
 
+    @Test
+    public void testContextPropagationOnly() {
+        RabbitListenerConfiguration.activeContextPerMessage.clear();
+
+        doReturn(true).when(tracer.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+
+        rabbitTemplate.convertAndSend(TOPIC_EXCHANGE_NAME, TestConstants.ROUTING_KEY, "msg1");
+        rabbitTemplate.convertAndSend(TOPIC_EXCHANGE_NAME, TestConstants.ROUTING_KEY, "msg2");
+
+        await().untilAsserted(() -> Assertions.assertThat(RabbitListenerConfiguration.activeContextPerMessage)
+            .containsKeys("msg1", "msg2"));
+
+        Map<String,String> msg1Ctx = RabbitListenerConfiguration.activeContextPerMessage.get("msg1");
+        Map<String,String> msg2Ctx = RabbitListenerConfiguration.activeContextPerMessage.get("msg2");
+
+        String msg1TraceParent = msg1Ctx.get("traceparent");
+        String msg2TraceParent = msg2Ctx.get("traceparent");
+
+        Assertions.assertThat(msg1TraceParent).isNotEmpty();
+        Assertions.assertThat(msg2TraceParent).isNotEmpty();
+
+        Assertions.assertThat(msg1TraceParent).isNotEqualTo(msg2TraceParent);
+    }
 }

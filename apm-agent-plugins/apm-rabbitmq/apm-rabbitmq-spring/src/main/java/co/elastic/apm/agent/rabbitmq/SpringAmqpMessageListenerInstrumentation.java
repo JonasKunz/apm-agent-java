@@ -18,6 +18,7 @@
  */
 package co.elastic.apm.agent.rabbitmq;
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Transaction;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.method.MethodDescription;
@@ -69,17 +70,21 @@ public class SpringAmqpMessageListenerInstrumentation extends SpringBaseInstrume
             if (message == null) {
                 return null;
             }
-            return transactionHelper.createTransaction(message, SpringAmqpTransactionNameUtil.getTransactionNamePrefix(listener));
+            return transactionHelper.createAndActivateContext(message, SpringAmqpTransactionNameUtil.getTransactionNamePrefix(listener));
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class, inline = false)
-        public static void afterMessageHandle(@Advice.Enter @Nullable final Object transactionObject,
+        public static void afterMessageHandle(@Advice.Enter @Nullable final Object ctxObject,
                                               @Advice.Thrown @Nullable final Throwable throwable) {
-            if (transactionObject instanceof Transaction<?>) {
-                Transaction<?> transaction = (Transaction<?>) transactionObject;
-                transaction.captureException(throwable)
-                    .deactivate()
-                    .end();
+
+            ElasticContext<?> context = (ElasticContext<?>) ctxObject;
+            if(context != null) {
+                Transaction<?> transaction = context.getTransaction();
+                if(transaction != null) {
+                    transaction.captureException(throwable)
+                        .end();
+                }
+                context.deactivate();
             }
         }
     }

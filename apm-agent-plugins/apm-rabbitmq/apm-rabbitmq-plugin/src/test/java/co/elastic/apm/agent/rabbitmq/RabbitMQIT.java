@@ -44,6 +44,7 @@ package co.elastic.apm.agent.rabbitmq;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
 import co.elastic.apm.agent.impl.context.Destination;
 import co.elastic.apm.agent.impl.context.Headers;
@@ -79,6 +80,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -226,6 +228,34 @@ public class RabbitMQIT extends AbstractInstrumentationTest {
 
         performTest(emptyProperties(), true, randString("ignored"), (mt, ms) -> {
         });
+    }
+
+    @Test
+    void checkContextPropagationOnly() throws Exception{
+        doReturn(true).when(tracer.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+
+        Channel channel = connection.createChannel();
+        String exchange = createExchange(channel, randString("exchange"));
+        String queue = createQueue(channel, exchange);
+
+        CountDownLatch messageReceived = new CountDownLatch(1);
+        Map<String, String> context = new ConcurrentHashMap<>();
+
+        channel.basicConsume(queue, new DefaultConsumer(channel) {
+            // using an anonymous class to ensure class matching is properly applied
+
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                tracer.currentContext().propagateContext(context, TextHeaderMapAccessor.INSTANCE, null);
+                messageReceived.countDown();
+            }
+        });
+
+        channel.basicPublish(exchange, ROUTING_KEY, emptyProperties(), MSG);
+        messageReceived.await(10, TimeUnit.MILLISECONDS);
+
+        assertThat(context).containsKeys(DISTRIBUTED_TRACING_HEADERS);
+        assertThat(reporter.getTransactions()).isEmpty();
     }
 
     private void performTest(@Nullable AMQP.BasicProperties properties) throws IOException, InterruptedException {

@@ -18,17 +18,28 @@
  */
 package co.elastic.apm.agent.rabbitmq.config;
 
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.rabbitmq.TestConstants;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Configuration
 @EnableRabbit
 public class RabbitListenerConfiguration extends CommonRabbitListenerConfiguration {
 
+    public static volatile ConcurrentHashMap<String, Map<String,String>> activeContextPerMessage = new ConcurrentHashMap<>();
+
     @RabbitListener(queues = TestConstants.QUEUE_NAME)
     public void processMessage(String message) {
+        Map<String, String> context = new HashMap<>();
+        GlobalTracer.get().currentContext().propagateContext(context, TextHeaderMapAccessor.INSTANCE, null);
+        activeContextPerMessage.put(message, context);
         testSpan();
     }
 

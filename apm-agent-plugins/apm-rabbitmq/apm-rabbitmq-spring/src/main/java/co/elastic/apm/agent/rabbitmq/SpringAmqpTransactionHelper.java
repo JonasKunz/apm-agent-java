@@ -18,6 +18,7 @@
  */
 package co.elastic.apm.agent.rabbitmq;
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Tracer;
 import co.elastic.apm.agent.tracer.Transaction;
 import co.elastic.apm.agent.rabbitmq.header.SpringRabbitMQTextHeaderGetter;
@@ -36,7 +37,7 @@ public class SpringAmqpTransactionHelper {
     }
 
     @Nullable
-    public Transaction<?> createTransaction(Message message, String transactionNamePrefix) {
+    public ElasticContext<?> createAndActivateContext(Message message, String transactionNamePrefix) {
         String exchange = null;
         MessageProperties messageProperties = message.getMessageProperties();
         if (messageProperties != null) {
@@ -52,7 +53,11 @@ public class SpringAmqpTransactionHelper {
         }
         transaction = tracer.startChildTransaction(messageProperties, SpringRabbitMQTextHeaderGetter.INSTANCE, PrivilegedActionUtils.getClassLoader(message.getClass()));
         if (transaction == null) {
-            return null;
+            ElasticContext<?> propagationOnly = tracer.currentContext().withContextPropagationOnly(messageProperties, SpringRabbitMQTextHeaderGetter.INSTANCE);
+            if(propagationOnly != null) {
+                propagationOnly.activate();
+            }
+            return propagationOnly;
         }
 
         transaction.withType("messaging")
@@ -73,6 +78,7 @@ public class SpringAmqpTransactionHelper {
 
         // only capture incoming messages headers for now (consistent with other messaging plugins)
         AbstractBaseInstrumentation.captureHeaders(messageProperties != null ? messageProperties.getHeaders() : null, transaction.getContext().getMessage());
-        return transaction.activate();
+        transaction.activate();
+        return tracer.currentContext();
     }
 }

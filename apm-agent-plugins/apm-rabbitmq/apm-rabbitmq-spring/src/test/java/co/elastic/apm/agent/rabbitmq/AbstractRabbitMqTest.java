@@ -18,11 +18,16 @@
  */
 package co.elastic.apm.agent.rabbitmq;
 
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.Transaction;
+import co.elastic.apm.agent.rabbitmq.config.RabbitListenerConfiguration;
+import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
+import org.assertj.core.api.Assertions;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static co.elastic.apm.agent.rabbitmq.RabbitMQIT.checkParentChild;
 import static co.elastic.apm.agent.rabbitmq.RabbitMQIT.checkSendSpan;
@@ -30,6 +35,8 @@ import static co.elastic.apm.agent.rabbitmq.RabbitMQIT.checkTransaction;
 import static co.elastic.apm.agent.rabbitmq.RabbitMQIT.getNonRootTransaction;
 import static co.elastic.apm.agent.rabbitmq.TestConstants.TOPIC_EXCHANGE_NAME;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.doReturn;
 
 public abstract class AbstractRabbitMqTest extends RabbitMqTestBase {
 

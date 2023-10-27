@@ -22,6 +22,7 @@ package co.elastic.apm.agent.jms.javax;
 import co.elastic.apm.agent.AbstractInstrumentationTest;
 import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.impl.TracerInternalApiUtils;
 import co.elastic.apm.agent.impl.context.Headers;
 import co.elastic.apm.agent.impl.sampling.ConstantSampler;
@@ -233,6 +234,23 @@ public class JmsInstrumentationIT extends AbstractInstrumentationTest {
     }
 
     @Test
+    public void testContextPropagationOnly() throws Exception {
+        // End current transaction and start a non-sampled one
+        //noinspection ConstantConditions
+        tracer.currentTransaction().deactivate().end();
+        reporter.reset();
+        doReturn(true).when(coreConfiguration).isContextPropagationOnly();
+
+        final Queue queue = createTestQueue();
+        Map<String, String> context = doTestSendReceiveOnNonTracedThread(() -> brokerFacade.receive(queue, 10), queue, false);
+
+        assertThat(context.get("traceparent")).isNotEmpty();
+
+        assertThat(reporter.getTransactions()).isEmpty();
+        assertThat(reporter.getSpans()).isEmpty();
+    }
+
+    @Test
     public void testQueueSendReceiveOnNonTracedThreadInactive() throws Exception {
         TracerInternalApiUtils.pauseTracer(tracer);
         final Queue queue = createTestQueue();
@@ -284,8 +302,9 @@ public class JmsInstrumentationIT extends AbstractInstrumentationTest {
         Message message;
     }
 
-    private void doTestSendReceiveOnNonTracedThread(Callable<Message> receiveMethod, Queue queue, boolean sleepBetweenCycles) throws Exception {
+    private Map<String,String> doTestSendReceiveOnNonTracedThread(Callable<Message> receiveMethod, Queue queue, boolean sleepBetweenCycles) throws Exception {
         final MessageHolder messageHolder = new MessageHolder();
+        final Map<String,String> messageHandlingContext = new HashMap<>();
         final CancellableThread thread = new CancellableThread(() -> {
             try {
                 Message message = receiveMethod.call();
@@ -300,6 +319,8 @@ public class JmsInstrumentationIT extends AbstractInstrumentationTest {
                     messageHolder.message = message;
                     // create a span for testing context propagation
                     brokerFacade.send(noopQ, brokerFacade.createTextMessage("testQueueSendReceiveOnNonTracedThread"), false);
+                    // also fetch the current context as a map
+                    tracer.currentContext().propagateContext(messageHandlingContext, TextHeaderMapAccessor.INSTANCE, null);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -317,6 +338,7 @@ public class JmsInstrumentationIT extends AbstractInstrumentationTest {
             thread.join(1000);
             assertThat(thread.isDone()).isTrue();
         }
+        return messageHandlingContext;
     }
 
     private Queue createTestQueue() throws Exception {
@@ -415,7 +437,7 @@ public class JmsInstrumentationIT extends AbstractInstrumentationTest {
         Message incomingMessage = resultQ.poll(2, TimeUnit.SECONDS);
         assertThat(incomingMessage).isNotNull();
         verifyMessage(message, incomingMessage);
-        if (tracer.isRunning()) {
+        if (tracer.isRunning() && !tracer.getConfig(CoreConfiguration.class).isContextPropagationOnly()) {
             Transaction transaction = tracer.currentTransaction();
             assertThat(transaction).isNotNull();
             if (transaction.isSampled()) {

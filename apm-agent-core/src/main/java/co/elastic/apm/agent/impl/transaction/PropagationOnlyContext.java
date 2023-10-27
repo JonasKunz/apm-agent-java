@@ -42,16 +42,20 @@ public class PropagationOnlyContext extends AbstractRefCountedContext<Propagatio
         baggage = Baggage.EMPTY;
     }
 
-    public <C> void initFrom(C carrier, HeaderGetter<?, C> getter) {
-        if(remoteTraceParent.asChildOf(carrier, getter)) {
+    public <C> void initFrom(@Nullable C carrier, @Nullable HeaderGetter<?, C> getter) {
+        if(carrier != null && getter != null && remoteTraceParent.asChildOf(carrier, getter)) {
             remoteTraceParent.replaceWithParent();
         } else {
             //Create a dummy remote-parent
             remoteTraceParent.asRootSpan(ConstantSampler.of(true));
         }
-        Baggage.Builder baggageBuilder = Baggage.builder();
-        W3CBaggagePropagation.parse(carrier, getter, baggageBuilder);
-        baggage = baggageBuilder.build();
+        if(carrier != null && getter != null) {
+            Baggage.Builder baggageBuilder = Baggage.builder();
+            W3CBaggagePropagation.parse(carrier, getter, baggageBuilder);
+            baggage = baggageBuilder.build();
+        } else {
+            baggage = Baggage.EMPTY;
+        }
     }
 
     @Nullable

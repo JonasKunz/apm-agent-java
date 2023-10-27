@@ -18,8 +18,6 @@
  */
 package co.elastic.apm.agent.jms.javax;
 
-import co.elastic.apm.agent.sdk.logging.Logger;
-import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.NamedElement;
 import net.bytebuddy.description.method.MethodDescription;
@@ -72,9 +70,9 @@ public class JmsMessageListenerInstrumentation extends BaseJmsInstrumentation {
 
         @SuppressWarnings("unused")
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class, inline = false)
-        public static void afterOnMessage(@Advice.Enter @Nullable final Object transactionObj,
+        public static void afterOnMessage(@Advice.Enter @Nullable final Object ctxObj,
                                           @Advice.Thrown final Throwable throwable) {
-            helper.deactivateTransaction(transactionObj, throwable);
+            helper.deactivateContext(ctxObj, throwable);
         }
     }
 }

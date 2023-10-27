@@ -143,12 +143,19 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
     }
 
     @Nullable
-    public Transaction<?> startJmsTransaction(MESSAGE parentMessage, Class<?> instrumentedClass) {
+    public ElasticContext<?> startAndActivateJmsContext(MESSAGE parentMessage, Class<?> instrumentedClass) {
         Transaction<?> transaction = tracer.startChildTransaction(parentMessage, propertyAccessorGetter(), PrivilegedActionUtils.getClassLoader(instrumentedClass));
         if (transaction != null) {
             transaction.setFrameworkName(FRAMEWORK_NAME);
+            transaction.activate();
+            return tracer.currentContext();
+        } else {
+            ElasticContext<?> propagationOnly = tracer.currentContext().withContextPropagationOnly(parentMessage, propertyAccessorGetter());
+            if(propagationOnly != null) {
+                propagationOnly.activate();
+            }
+            return propagationOnly;
         }
-        return transaction;
     }
 
     @Nullable
@@ -217,11 +224,12 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
     @Nullable
     public Object baseBeforeReceive(Class<?> clazz, String methodName) {
         AbstractSpan<?> createdSpan = null;
+        ElasticContext<?> createdPropagationOnlyContext = null;
         boolean createPollingTransaction = false;
         boolean createPollingSpan = false;
         final ElasticContext<?> activeContext = tracer.currentContext();
         final AbstractSpan<?> parentSpan = activeContext.getSpan();
-        if (parentSpan == null) {
+        if (activeContext.getTraceId() == null) { //no span or propagation-only context is present
             createPollingTransaction = true;
         } else {
             if (parentSpan instanceof Transaction<?>) {
@@ -245,6 +253,10 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
                     return null;
                 }
                 createPollingSpan = true;
+            } else if(messagingConfiguration.getMessagePollingTransactionStrategy() != MessagingConfiguration.JmsStrategy.POLLING) {
+                //we have created a handling propagation-only context and need to finish it
+                activeContext.deactivate();
+                createPollingTransaction = true;
             }
         }
 
@@ -260,23 +272,31 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
             createdSpan = tracer.startRootTransaction(PrivilegedActionUtils.getClassLoader(clazz));
             if (createdSpan != null) {
                 ((Transaction<?>) createdSpan).withType(MESSAGE_POLLING);
+            } else {
+                createdPropagationOnlyContext = tracer.currentContext().withContextPropagationOnly(null, null);
             }
         }
 
         if (createdSpan != null) {
             createdSpan.withName(RECEIVE_NAME_PREFIX);
             createdSpan.activate();
+            return tracer.currentContext();
+        } else if(createdPropagationOnlyContext != null) {
+            createdPropagationOnlyContext.activate();
+            return createdPropagationOnlyContext;
         }
-        return createdSpan;
+        return null;
     }
 
     public void baseAfterReceive(Class<?> clazz, String methodName,
-                                 @Nullable final Object abstractSpanObj,
+                                 @Nullable final Object startedContextObj,
                                  @Nullable final MESSAGE message,
                                  @Nullable final Throwable throwable) {
+
+        ElasticContext<?> startedContext = (ElasticContext<?>) startedContextObj;
         AbstractSpan<?> abstractSpan = null;
-        if (abstractSpanObj instanceof AbstractSpan<?>) {
-            abstractSpan = (AbstractSpan<?>) abstractSpanObj;
+        if (startedContext != null) {
+            abstractSpan = startedContext.getSpan();
         }
         DESTINATION destination = null;
         String destinationName = null;
@@ -304,7 +324,7 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
             } else if (abstractSpan != null) {
                 abstractSpan.addLink(propertyAccessorGetter(), message);
             }
-        } else if (abstractSpan instanceof Transaction) {
+        } else if (abstractSpan instanceof Transaction<?>) {
             // Do not report polling transactions if not yielding messages
             ((Transaction<?>) abstractSpan).ignoreTransaction();
             addDetails = false;
@@ -323,8 +343,11 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
                     abstractSpan.captureException(throwable);
                 }
             } finally {
-                abstractSpan.deactivate().end();
+                abstractSpan.end();
             }
+        }
+        if(startedContext != null) {
+            startedContext.deactivate();
         }
 
         if (!discard && tracer.currentTransaction() == null
@@ -332,19 +355,20 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
             && messagingConfiguration.getMessagePollingTransactionStrategy() != MessagingConfiguration.JmsStrategy.POLLING
             && !"receiveNoWait".equals(methodName)) {
 
-            Transaction<?> messageHandlingTransaction = startJmsTransaction(message, clazz);
-            if (messageHandlingTransaction != null) {
-                messageHandlingTransaction.withType(MESSAGE_HANDLING)
-                    .withName(RECEIVE_NAME_PREFIX);
+            ElasticContext<?> messageHandlingContext = startAndActivateJmsContext(message, clazz);
+            if(messageHandlingContext != null) {
+                Transaction<?> messageHandlingTransaction = messageHandlingContext.getTransaction();
+                if (messageHandlingTransaction != null) {
+                    messageHandlingTransaction.withType(MESSAGE_HANDLING)
+                        .withName(RECEIVE_NAME_PREFIX);
 
-                if (destinationName != null) {
-                    messageHandlingTransaction.appendToName(" from ");
-                    addDestinationDetails(destination, destinationName, messageHandlingTransaction);
-                    addMessageDetails(message, messageHandlingTransaction);
-                    setMessageAge(message, messageHandlingTransaction);
+                    if (destinationName != null) {
+                        messageHandlingTransaction.appendToName(" from ");
+                        addDestinationDetails(destination, destinationName, messageHandlingTransaction);
+                        addMessageDetails(message, messageHandlingTransaction);
+                        setMessageAge(message, messageHandlingTransaction);
+                    }
                 }
-
-                messageHandlingTransaction.activate();
             }
         }
     }
@@ -373,7 +397,8 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
         }
 
         // Create a transaction - even if running on same JVM as the sender
-        Transaction<?> transaction = startJmsTransaction(message, clazz);
+        ElasticContext<?> startedContext = startAndActivateJmsContext(message, clazz);
+        Transaction<?> transaction = startedContext != null ? startedContext.getTransaction() : null;
         if (transaction != null) {
             transaction.withType(MESSAGING_TYPE)
                 .withName(RECEIVE_NAME_PREFIX);
@@ -383,17 +408,20 @@ public abstract class JmsInstrumentationHelper<DESTINATION, MESSAGE, MESSAGELIST
             }
             addMessageDetails(message, transaction);
             setMessageAge(message, transaction);
-            transaction.activate();
         }
 
         return transaction;
     }
 
-    public void deactivateTransaction(@Nullable final Object transactionObj, final Throwable throwable) {
-        if (transactionObj instanceof Transaction<?>) {
-            Transaction<?> transaction = (Transaction<?>) transactionObj;
-            transaction.captureException(throwable);
-            transaction.deactivate().end();
+    public void deactivateContext(@Nullable final Object ctxObj, final Throwable throwable) {
+        if (ctxObj instanceof ElasticContext<?>) {
+            ElasticContext<?> activatedCtx = (ElasticContext<?>) ctxObj;
+            Transaction<?> transaction = activatedCtx.getTransaction();
+            if(transaction != null) {
+                transaction.captureException(throwable);
+                transaction.end();
+            }
+            activatedCtx.deactivate();
         }
     }
 

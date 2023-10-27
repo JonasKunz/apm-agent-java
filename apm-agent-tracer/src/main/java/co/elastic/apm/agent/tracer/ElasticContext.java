@@ -79,13 +79,13 @@ public interface ElasticContext<T extends ElasticContext<T>> extends Activateabl
      * This method will always return null if the current context already contains a trace context,
      * e.g. an existing remote parent or an active transaction)
      *
-     * @param carrier the header carrier
-     * @param headerGetter a reader for the provided carrieres
+     * @param carrier the header carrier, if null a root context will be started instead
+     * @param headerGetter a reader for the provided carrieres, if null a root context will be started instead
      * @return a new {@link ElasticContext} with the remote data. Null if the headers contained no trace context or baggage or this context already has a trace context active.
      * @param <C> the carrier type
      */
     @Nullable
-    <C> ElasticContext<?> withContextPropagationOnly(C carrier, HeaderGetter<?, C> headerGetter);
+    <C> ElasticContext<?> withContextPropagationOnly(@Nullable C carrier, @Nullable HeaderGetter<?, C> headerGetter);
 
 
     /**
@@ -146,5 +146,4 @@ public interface ElasticContext<T extends ElasticContext<T>> extends Activateabl
      * </ul>
      */
     boolean shouldSkipChildSpanCreation();
-
 }

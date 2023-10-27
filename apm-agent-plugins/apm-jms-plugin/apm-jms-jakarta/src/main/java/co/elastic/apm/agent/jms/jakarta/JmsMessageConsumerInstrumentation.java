@@ -76,10 +76,10 @@ public abstract class JmsMessageConsumerInstrumentation extends BaseJmsInstrumen
             @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class, inline = false)
             public static void afterReceive(@Advice.Origin Class<?> clazz,
                                             @Advice.Origin("#m") String methodName,
-                                            @Advice.Enter @Nullable final Object abstractSpanObj,
+                                            @Advice.Enter @Nullable final Object createdCtxObj,
                                             @Advice.Return @Nullable final Message message,
                                             @Advice.Thrown @Nullable final Throwable throwable) {
-                helper.baseAfterReceive(clazz, methodName, abstractSpanObj, message, throwable);
+                helper.baseAfterReceive(clazz, methodName, createdCtxObj, message, throwable);
             }
         }
     }

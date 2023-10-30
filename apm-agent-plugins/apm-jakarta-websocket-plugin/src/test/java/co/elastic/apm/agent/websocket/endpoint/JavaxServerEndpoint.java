@@ -23,9 +23,10 @@ import javax.websocket.OnError;
 import javax.websocket.OnMessage;
 import javax.websocket.OnOpen;
 import javax.websocket.server.ServerEndpoint;
+import java.util.Map;
 
 @ServerEndpoint("/path")
-public class JavaxServerEndpoint implements WebSocketEndpoint {
+public class JavaxServerEndpoint extends WebSocketEndpoint {
 
     @OnOpen
     @Override
@@ -34,7 +35,8 @@ public class JavaxServerEndpoint implements WebSocketEndpoint {
 
     @OnMessage
     @Override
-    public void onMessage(String message) {
+    public Map<String,String> onMessage(String message) {
+        return super.onMessage(message);
     }
 
     @OnError

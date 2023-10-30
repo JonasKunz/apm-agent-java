@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.websocket;
 
 import co.elastic.apm.agent.sdk.ElasticApmInstrumentation;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.Outcome;
 import co.elastic.apm.agent.tracer.Tracer;
@@ -92,6 +93,11 @@ public abstract class BaseServerEndpointInstrumentation extends ElasticApmInstru
                 if (rootTransaction != null) {
                     setTransactionTypeAndName(rootTransaction, signature, frameworkName, frameworkVersion);
                     return rootTransaction.activate();
+                } else {
+                    ElasticContext<?> propagationOnly = tracer.currentContext().withContextPropagationOnly(null, null);
+                    if(propagationOnly != null) {
+                        return propagationOnly.activate();
+                    }
                 }
             } else {
                 setTransactionTypeAndName(currentTransaction, signature, frameworkName, frameworkVersion);
@@ -100,18 +106,19 @@ public abstract class BaseServerEndpointInstrumentation extends ElasticApmInstru
             return null;
         }
 
-        protected static void endTransaction(@Nullable Object transactionOrNull, @Advice.Thrown @Nullable Throwable t) {
-            if (transactionOrNull == null) {
-                return;
-            }
-
-            Transaction<?> transaction = (Transaction<?>) transactionOrNull;
-            try {
-                if (t != null) {
-                    transaction.captureException(t).withOutcome(Outcome.FAILURE);
+        protected static void endTransaction(@Nullable Object transactionOrCtx, @Advice.Thrown @Nullable Throwable t) {
+            if (transactionOrCtx instanceof Transaction<?>) {
+                Transaction<?> transaction = (Transaction<?>) transactionOrCtx;
+                try {
+                    if (t != null) {
+                        transaction.captureException(t).withOutcome(Outcome.FAILURE);
+                    }
+                } finally {
+                    transaction.deactivate().end();
                 }
-            } finally {
-                transaction.deactivate().end();
+            } else if(transactionOrCtx instanceof ElasticContext<?>) {
+                ElasticContext<?> propagationOnlyCtx = (ElasticContext<?>) transactionOrCtx;
+                propagationOnlyCtx.deactivate();
             }
         }
 

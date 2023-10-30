@@ -24,8 +24,10 @@ import jakarta.websocket.OnMessage;
 import jakarta.websocket.OnOpen;
 import jakarta.websocket.server.ServerEndpoint;
 
+import java.util.Map;
+
 @ServerEndpoint("/path")
-public class JakartaServerEndpoint implements WebSocketEndpoint {
+public class JakartaServerEndpoint extends WebSocketEndpoint {
 
     @OnOpen
     @Override
@@ -34,7 +36,8 @@ public class JakartaServerEndpoint implements WebSocketEndpoint {
 
     @OnMessage
     @Override
-    public void onMessage(String message) {
+    public Map<String,String> onMessage(String message) {
+        return super.onMessage(message);
     }
 
     @OnError

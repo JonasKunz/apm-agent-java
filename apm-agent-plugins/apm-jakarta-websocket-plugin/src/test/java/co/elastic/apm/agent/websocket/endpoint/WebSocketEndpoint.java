@@ -18,13 +18,24 @@
  */
 package co.elastic.apm.agent.websocket.endpoint;
 
-public interface WebSocketEndpoint {
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 
-    void onOpen();
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-    void onMessage(String message);
+public abstract class WebSocketEndpoint {
 
-    void onError();
+    public abstract void onOpen();
 
-    void onClose();
+    public Map<String,String> onMessage(String message) {
+        Map<String,String> context = new HashMap<>();
+        GlobalTracer.get().currentContext().propagateContext(context, TextHeaderMapAccessor.INSTANCE, null);
+        return context;
+    }
+
+    public abstract void onError();
+
+    public abstract void onClose();
 }

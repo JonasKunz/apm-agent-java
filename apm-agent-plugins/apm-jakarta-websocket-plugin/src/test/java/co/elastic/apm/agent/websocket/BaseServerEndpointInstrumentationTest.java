@@ -19,11 +19,15 @@
 package co.elastic.apm.agent.websocket;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.websocket.endpoint.WebSocketEndpoint;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 
 abstract class BaseServerEndpointInstrumentationTest extends AbstractInstrumentationTest {
 
@@ -62,6 +66,15 @@ abstract class BaseServerEndpointInstrumentationTest extends AbstractInstrumenta
         }
 
         assertReportedTransactionNameAndFramework("onMessage");
+    }
+
+    @Test
+    void testContextPropagationOnly() {
+        doReturn(true).when(config.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+        Map<String,String> context = serverEndpoint.onMessage("");
+
+        assertThat(context.get("traceparent")).isNotEmpty();
+        assertThat(reporter.getTransactions()).isEmpty();
     }
 
     @Test

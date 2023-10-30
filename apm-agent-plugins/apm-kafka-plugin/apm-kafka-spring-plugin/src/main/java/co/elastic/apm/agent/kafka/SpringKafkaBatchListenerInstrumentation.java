@@ -18,6 +18,7 @@
  */
 package co.elastic.apm.agent.kafka;
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.Transaction;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
@@ -66,12 +67,6 @@ public class SpringKafkaBatchListenerInstrumentation extends BaseKafkaInstrument
 
     public static class SpringKafkaBatchListenerAdvice {
 
-        private static final Logger oneTimeTransactionCreationWarningLogger;
-
-        static {
-            oneTimeTransactionCreationWarningLogger = LoggerUtils.logOnce(LoggerFactory.getLogger("Spring-Kafka-Batch-Logger"));
-        }
-
         @Nullable
         @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
         public static Object onEnter(@Advice.This Object thiz) {
@@ -82,18 +77,25 @@ public class SpringKafkaBatchListenerInstrumentation extends BaseKafkaInstrument
                     .withName("Spring Kafka Message Batch Processing")
                     .activate();
                 transaction.setFrameworkName("Kafka");
+                //we don't need to add span links here, they will be added by the KafkaConsumerRecordsInstrumentation
+                return transaction;
             } else {
-                oneTimeTransactionCreationWarningLogger.warn("Failed to start Spring Kafka transaction for batch processing");
+                ElasticContext<?> propagationOnly = tracer.currentContext().withContextPropagationOnly(null, null);
+                if(propagationOnly != null) {
+                    return propagationOnly.activate();
+                }
             }
-            //we don't need to add span links here, they will be added by the KafkaConsumerRecordsInstrumentation
-            return transaction;
+            return null;
         }
 
         @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
-        public static void onExit(@Nullable @Advice.Enter Object transactionObj) {
-            Transaction<?> transaction = (Transaction<?>) transactionObj;
-            if (transaction != null) {
+        public static void onExit(@Nullable @Advice.Enter Object transactionOrCtxObj) {
+            if(transactionOrCtxObj instanceof Transaction<?>) {
+                Transaction<?> transaction = (Transaction<?>) transactionOrCtxObj;
                 transaction.deactivate().end();
+            } else if(transactionOrCtxObj instanceof ElasticContext<?>) {
+                ElasticContext<?> propagationOnlyCtx = (ElasticContext<?>) transactionOrCtxObj;
+                propagationOnlyCtx.deactivate();
             }
         }
 

@@ -19,6 +19,8 @@
 package co.elastic.apm.agent.kafka;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
+import co.elastic.apm.agent.configuration.CoreConfiguration;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.impl.transaction.AbstractSpan;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.Transaction;
@@ -46,12 +48,16 @@ import org.springframework.kafka.core.ProducerFactory;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static co.elastic.apm.agent.testutils.assertions.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.doReturn;
 
 
 public class KafkaSpringIT extends AbstractInstrumentationTest {
@@ -115,6 +121,19 @@ public class KafkaSpringIT extends AbstractInstrumentationTest {
         assertThat(listenerSpan)
             .isNotNull()
             .hasParent(batchReceive);
+    }
+
+
+    @Test
+    public void testContextPropagationOnly() {
+        doReturn(true).when(config.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+
+        kafkaTemplate.send(BATCH_TOPIC, "data-1");
+        kafkaTemplate.send(BATCH_TOPIC, "data-2");
+
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            assertThat(BatchListener.LAST_CONTEXT.get("traceparent")).isNotEmpty();
+        });
     }
 
     // This test has nothing to do with the SpringKafkaBatchListenerInstrumentation,
@@ -208,9 +227,16 @@ public class KafkaSpringIT extends AbstractInstrumentationTest {
 
     public static class BatchListener {
 
+        private static final Map<String, String> LAST_CONTEXT = new ConcurrentHashMap<>();
+
         @KafkaListener(id = "my-batch", topics = BATCH_TOPIC, batch = "true")
         public void batchListener(List<String> in) {
-            tracer.getActive().createSpan().withName("batchListener").end();
+            LAST_CONTEXT.clear();
+            tracer.currentContext().propagateContext(LAST_CONTEXT, TextHeaderMapAccessor.INSTANCE, null);
+            AbstractSpan<?> active = tracer.getActive();
+            if(active != null) {
+                active.createSpan().withName("batchListener").end();
+            }
         }
 
     }

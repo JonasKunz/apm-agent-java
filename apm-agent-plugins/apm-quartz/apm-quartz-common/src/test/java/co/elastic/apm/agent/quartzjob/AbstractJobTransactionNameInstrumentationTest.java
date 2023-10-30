@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.quartzjob;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.impl.ElasticApmTracer;
 import co.elastic.apm.agent.impl.TracerInternalApiUtils;
 import co.elastic.apm.agent.impl.transaction.Span;
@@ -34,7 +35,13 @@ import org.quartz.SchedulerException;
 import org.quartz.SimpleTrigger;
 import org.quartz.impl.StdSchedulerFactory;
 
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.doReturn;
 
 
 abstract class AbstractJobTransactionNameInstrumentationTest extends AbstractInstrumentationTest {
@@ -70,7 +77,7 @@ abstract class AbstractJobTransactionNameInstrumentationTest extends AbstractIns
 
     @Test
     void testJobManualCall() throws SchedulerException, InterruptedException {
-        executeTestJobCreatingSpan(tracer, true);
+        executeTestJobCreatingSpan(tracer, true, null);
 
         reporter.awaitTransactionCount(1);
         Transaction transaction = reporter.getFirstTransaction();
@@ -88,7 +95,7 @@ abstract class AbstractJobTransactionNameInstrumentationTest extends AbstractIns
         int transactionCount = objectPoolFactory.getTransactionPool().getRequestedObjectCount();
         int spanCount = objectPoolFactory.getSpanPool().getRequestedObjectCount();
 
-        executeTestJobCreatingSpan(tracer, false);
+        executeTestJobCreatingSpan(tracer, false, null);
 
         assertThat(reporter.getTransactions()).isEmpty();
         assertThat(reporter.getSpans()).isEmpty();
@@ -96,7 +103,20 @@ abstract class AbstractJobTransactionNameInstrumentationTest extends AbstractIns
         assertThat(objectPoolFactory.getSpanPool().getRequestedObjectCount()).isEqualTo(spanCount);
     }
 
+    @Test
+    public void testContextPropagationOnly() throws SchedulerException {
+        doReturn(true).when(config.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
 
+        Map<String,String> context = new ConcurrentHashMap<>();
+
+        executeTestJobCreatingSpan(tracer, false, context);
+
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            assertThat(context.get("traceparent")).isNotEmpty();
+        });
+        assertThat(reporter.getTransactions()).isEmpty();
+        assertThat(reporter.getSpans()).isEmpty();
+    }
 
     @Test
     void testJobWithResult() throws SchedulerException {
@@ -133,7 +153,7 @@ abstract class AbstractJobTransactionNameInstrumentationTest extends AbstractIns
 
     abstract JobDetail buildJobDetailTestJob(String name, String groupName);
 
-    abstract void executeTestJobCreatingSpan(ElasticApmTracer tracer, boolean traced) throws JobExecutionException;
+    abstract void executeTestJobCreatingSpan(ElasticApmTracer tracer, boolean traced, Map<String,String> contextStorage) throws JobExecutionException;
 
     abstract JobDetail buildJobDetailTestJobWithResult(String name);
 

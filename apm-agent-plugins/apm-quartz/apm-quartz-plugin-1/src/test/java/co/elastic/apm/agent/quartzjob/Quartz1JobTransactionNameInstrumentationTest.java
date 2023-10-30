@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.quartzjob;
 
 import co.elastic.apm.agent.impl.ElasticApmTracer;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.tracer.Outcome;
 import org.quartz.Job;
@@ -28,6 +29,8 @@ import org.quartz.JobExecutionException;
 import org.quartz.SimpleTrigger;
 
 import javax.annotation.Nullable;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -65,8 +68,8 @@ class Quartz1JobTransactionNameInstrumentationTest extends AbstractJobTransactio
     }
 
     @Override
-    void executeTestJobCreatingSpan(ElasticApmTracer tracer, boolean traced) throws JobExecutionException {
-        new TestJobCreatingSpan(tracer, traced).execute(null);
+    void executeTestJobCreatingSpan(ElasticApmTracer tracer, boolean traced, @Nullable Map<String,String> contextStorage) throws JobExecutionException {
+        new TestJobCreatingSpan(tracer, traced, contextStorage).execute(null);
     }
 
     @Override
@@ -103,14 +106,20 @@ class Quartz1JobTransactionNameInstrumentationTest extends AbstractJobTransactio
     public static class TestJobCreatingSpan implements Job {
         private final ElasticApmTracer tracer;
         private final boolean traced;
+        @Nullable
+        private final Map<String, String> contextStorage;
 
-        public TestJobCreatingSpan(ElasticApmTracer tracer, boolean traced) {
+        public TestJobCreatingSpan(ElasticApmTracer tracer, boolean traced, @Nullable Map<String, String> contextStorage) {
             this.tracer = tracer;
             this.traced = traced;
+            this.contextStorage = contextStorage;
         }
 
         @Override
         public void execute(JobExecutionContext context) throws JobExecutionException {
+            if (contextStorage != null) {
+                tracer.currentContext().propagateContext(contextStorage, TextHeaderMapAccessor.INSTANCE, null);
+            }
             Transaction transaction = tracer.currentTransaction();
             if (traced) {
                 assertThat(transaction).isNotNull();

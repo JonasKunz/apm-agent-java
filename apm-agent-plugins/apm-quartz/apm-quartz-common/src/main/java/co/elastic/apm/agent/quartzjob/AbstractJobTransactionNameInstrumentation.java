@@ -24,6 +24,7 @@ import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import co.elastic.apm.agent.sdk.internal.util.PrivilegedActionUtils;
 import co.elastic.apm.agent.sdk.internal.util.VersionUtils;
 import co.elastic.apm.agent.tracer.AbstractSpan;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.Outcome;
 import co.elastic.apm.agent.tracer.Tracer;
@@ -75,42 +76,53 @@ public abstract class AbstractJobTransactionNameInstrumentation extends ElasticA
         private static final Logger logger = LoggerFactory.getLogger(BaseAdvice.class);
 
         @Nullable
-        protected static <T> Transaction<?> createAndActivateTransaction(@Nullable T jobExecutionContext, String signature, Class<?> clazz, JobExecutionContextHandler<T> helper) {
-            Transaction<?> transaction = null;
-            AbstractSpan<?> active = tracer.getActive();
-            if (active == null) {
+        protected static <T> ElasticContext<?> createAndActivateTransaction(@Nullable T jobExecutionContext, String signature, Class<?> clazz, JobExecutionContextHandler<T> helper) {
+
+            if (tracer.currentContext().getTraceId() == null) {
                 String transactionName = null;
                 if (jobExecutionContext != null) {
                     transactionName = helper.getJobDetailKey(jobExecutionContext);
                 }
+                Transaction<?> transaction;
                 if (transactionName != null) {
                     transaction = createAndActivateTransaction(clazz, transactionName);
                 } else {
                     logger.warn("Cannot correctly name transaction for method {} because JobExecutionContext is null or lacking job details", signature);
                     transaction = createAndActivateTransaction(clazz, signature);
                 }
+                if(transaction != null) {
+                    return tracer.currentContext();
+                } else {
+                    ElasticContext<?> propagationOnly = tracer.currentContext().withContextPropagationOnly(null, null);
+                    if(propagationOnly != null) {
+                        return propagationOnly.activate();
+                    }
+                }
             } else {
-                logger.debug("Not creating transaction for method {} because there is already a transaction running ({})", signature, active);
+                logger.debug("Not creating transaction for method {} because there is already a transaction running", signature);
             }
-            return transaction;
+            return null;
         }
 
         protected static <T> void endTransaction(@Nullable T jobExecutionContext,
-                                                 @Nullable Object transactionObj,
+                                                 @Nullable Object contextObj,
                                                  @Nullable Throwable t,
                                                  JobExecutionContextHandler<T> helper) {
-            if (transactionObj instanceof Transaction) {
-                Transaction<?> transaction = (Transaction<?>) transactionObj;
-                if (jobExecutionContext != null) {
-                    Object result = helper.getResult(jobExecutionContext);
-                    if (result != null) {
-                        transaction.withResultIfUnset(result.toString());
+            ElasticContext<?> context = (ElasticContext<?>) contextObj;
+            if(context != null) {
+                Transaction<?> transaction = context.getTransaction();
+                context.deactivate();
+                if (transaction != null) {
+                    if (jobExecutionContext != null) {
+                        Object result = helper.getResult(jobExecutionContext);
+                        if (result != null) {
+                            transaction.withResultIfUnset(result.toString());
+                        }
                     }
+                    transaction.captureException(t)
+                        .withOutcome(t != null ? Outcome.FAILURE : Outcome.SUCCESS)
+                        .end();
                 }
-                transaction.captureException(t)
-                    .withOutcome(t != null ? Outcome.FAILURE : Outcome.SUCCESS)
-                    .deactivate()
-                    .end();
             }
         }
 

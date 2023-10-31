@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.rabbitmq;
 
 
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.TraceContext;
@@ -33,13 +34,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringRunner;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.doReturn;
 
 @Ignore
@@ -192,4 +195,21 @@ public class SpringAmqpBatchIT extends RabbitMqTestBase {
 
         rootTraceTransaction.deactivate().end();
     }
+
+
+    @Test
+    public void testTransactionPerBatch_propagationOnly() {
+        doReturn(true).when(config.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+        BatchConfiguration.lastBatchContext.clear();
+
+        batchingRabbitTemplate.convertAndSend(TestConstants.QUEUE_NAME, "hello");
+        batchingRabbitTemplate.convertAndSend(TestConstants.QUEUE_NAME, "hello");
+
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            assertThat(BatchConfiguration.lastBatchContext.get("traceparent")).isNotEmpty();
+        });
+
+        assertThat(reporter.getTransactions()).isEmpty();
+    }
+
 }

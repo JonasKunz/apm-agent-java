@@ -19,9 +19,11 @@
 package co.elastic.apm.agent.rabbitmq.config;
 
 
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.rabbitmq.TestConstants;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
@@ -37,13 +39,19 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static co.elastic.apm.agent.rabbitmq.TestConstants.QUEUE_NAME;
 
 @EnableRabbit
 @Configuration
 public class BatchConfiguration extends BaseConfiguration {
+
+    public static Map<String,String> lastBatchContext = new ConcurrentHashMap<>();
 
     public static final Logger logger = LoggerFactory.getLogger(BatchConfiguration.class);
 
@@ -89,6 +97,9 @@ public class BatchConfiguration extends BaseConfiguration {
         containerFactory = "simpleRabbitListenerContainerFactory"
     )
     public void receiveWorkingBatch(List<Message> batchMessages) {
+        lastBatchContext.clear();
+        GlobalTracer.get().currentContext().propagateContext(lastBatchContext, TextHeaderMapAccessor.INSTANCE, null);
+
         logger.info("Received batch of size {} from '{}'", batchMessages.size(), QUEUE_NAME);
         batchMessages.forEach(message -> {
             logger.info("Message in 'spring-boot' batch: {}", message.getBody());

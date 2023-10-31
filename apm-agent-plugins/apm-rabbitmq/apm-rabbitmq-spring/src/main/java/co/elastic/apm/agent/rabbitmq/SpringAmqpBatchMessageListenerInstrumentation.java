@@ -19,6 +19,7 @@
 package co.elastic.apm.agent.rabbitmq;
 
 
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.AbstractSpan;
@@ -74,18 +75,23 @@ public class SpringAmqpBatchMessageListenerInstrumentation extends SpringBaseIns
                                              @Advice.Argument(0) @Nullable final List<Message> messageBatch) {
 
             List<Message> processedBatch = messageBatch;
-            Transaction<?> batchTransaction = null;
+            ElasticContext<?> activatedContext = null;
 
             if (tracer.isRunning() && messageBatch != null && !messageBatch.isEmpty()) {
                 AbstractSpan<?> active = tracer.getActive();
                 if (active == null && messagingConfiguration.getMessageBatchStrategy() == MessagingConfiguration.BatchStrategy.BATCH_HANDLING) {
-                    batchTransaction = tracer.startRootTransaction(PrivilegedActionUtils.getClassLoader(thiz.getClass()));
+                    Transaction<?> batchTransaction = tracer.startRootTransaction(PrivilegedActionUtils.getClassLoader(thiz.getClass()));
                     if (batchTransaction == null) {
-                        oneTimeTransactionCreationWarningLogger.warn("Failed to start Spring AMQP transaction for batch processing");
+                        ElasticContext<?> propOnlyCtx = tracer.currentContext().withContextPropagationOnly(null, null);
+                        if(propOnlyCtx != null) {
+                            propOnlyCtx.activate();
+                            activatedContext = tracer.currentContext();
+                        }
                     } else {
                         batchTransaction.withType("messaging")
                             .withName("Spring AMQP Message Batch Processing")
                             .activate();
+                        activatedContext = tracer.currentContext();
                     }
                 } else {
                     oneTimeTransactionCreationWarningLogger.warn("Unexpected active span during batch message processing start: {}",
@@ -104,20 +110,23 @@ public class SpringAmqpBatchMessageListenerInstrumentation extends SpringBaseIns
                     processedBatch = messageBatchHelper.wrapMessageBatchList(messageBatch);
                 }
             }
-            return new Object[]{processedBatch, batchTransaction};
+            return new Object[]{processedBatch, activatedContext};
         }
 
         @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
         public static void afterOnBatch(@Advice.Enter @Nullable Object[] enter,
                                         @Advice.Thrown @Nullable Throwable throwable) {
-            Transaction<?> batchTransaction = enter != null ? (Transaction<?>) enter[1] : null;
-            if (batchTransaction != null) {
+            ElasticContext<?> startedContext = enter != null ? (ElasticContext<?>) enter[1] : null;
+            if (startedContext != null) {
                 try {
-                    batchTransaction
-                        .captureException(throwable)
-                        .end();
+                    Transaction<?> batchTransaction = startedContext.getTransaction();
+                    if(batchTransaction != null) {
+                        batchTransaction
+                            .captureException(throwable)
+                            .end();
+                    }
                 } finally {
-                    batchTransaction.deactivate();
+                    startedContext.deactivate();
                 }
             }
         }

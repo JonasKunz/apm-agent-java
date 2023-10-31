@@ -18,7 +18,12 @@
  */
 package co.elastic.apm.agent.scheduled;
 
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
+import co.elastic.apm.agent.tracer.GlobalTracer;
+
 import javax.ejb.Schedule;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ScheduledTransactionNameInstrumentationTest extends AbstractScheduledTransactionNameInstrumentationTest{
     @Override
@@ -34,8 +39,12 @@ public class ScheduledTransactionNameInstrumentationTest extends AbstractSchedul
     protected static class JeeCounterImpl extends JeeCounter {
 
         @Schedule(minute = "5")
-        public void scheduled() {
+        public Map<String,String> scheduled() {
             this.count.incrementAndGet();
+
+            Map<String,String> ctx = new HashMap<>();
+            GlobalTracer.get().currentContext().propagateContext(ctx, TextHeaderMapAccessor.INSTANCE, null);
+            return ctx;
         }
 
         @javax.ejb.Schedules({

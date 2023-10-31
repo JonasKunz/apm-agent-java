@@ -19,15 +19,23 @@
 package co.elastic.apm.agent.scheduled;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
+import co.elastic.apm.agent.configuration.CoreConfiguration;
+import co.elastic.apm.agent.impl.TextHeaderMapAccessor;
 import co.elastic.apm.agent.impl.transaction.AbstractSpan;
 import co.elastic.apm.agent.impl.transaction.Transaction;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 
 public class TimerTaskInstrumentationTest extends AbstractInstrumentationTest {
 
@@ -81,6 +89,26 @@ public class TimerTaskInstrumentationTest extends AbstractInstrumentationTest {
 
         reporter.awaitTransactionCount(1);
         assertThat(reporter.getTransactions().get(0).getNameAsString()).isEqualTo("1#run");
+    }
+
+    @Test
+    void testTimerTask_contextPropagationOnly() throws InterruptedException {
+        doReturn(true).when(config.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+        Map<String,String> context = new HashMap<>();
+
+        CountDownLatch doneLatch = new CountDownLatch(1);
+        new Timer("Timer")
+            .schedule(new TimerTask() {
+                public void run() {
+                    tracer.currentContext().propagateContext(context, TextHeaderMapAccessor.INSTANCE, null);
+                    cancel();
+                    doneLatch.countDown();
+                }
+            }, 1);
+
+        doneLatch.await(10, TimeUnit.SECONDS);
+        assertThat(context.get("traceparent")).isNotEmpty();
+        assertThat(reporter.getTransactions()).isEmpty();
     }
 
     public static class TestTimerTask extends TimerTask {

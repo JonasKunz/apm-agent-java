@@ -24,6 +24,7 @@ import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import co.elastic.apm.agent.sdk.internal.util.PrivilegedActionUtils;
 import co.elastic.apm.agent.tracer.AbstractSpan;
+import co.elastic.apm.agent.tracer.ElasticContext;
 import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.Outcome;
 import co.elastic.apm.agent.tracer.Tracer;
@@ -72,6 +73,11 @@ public class ScheduledTransactionNameInstrumentation extends ElasticApmInstrumen
                         .withType("scheduled")
                         .activate();
                     return transaction;
+                } else {
+                    ElasticContext<?> propagationOnly = tracer.currentContext().withContextPropagationOnly(null, null);
+                    if(propagationOnly != null) {
+                        return propagationOnly.activate();
+                    }
                 }
             } else {
                 logger.debug("Not creating transaction for method {} because there is already a transaction running ({})", signature, active);
@@ -80,14 +86,16 @@ public class ScheduledTransactionNameInstrumentation extends ElasticApmInstrumen
         }
 
         @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class, inline = false)
-        public static void onMethodExit(@Advice.Enter @Nullable Object transactionObj,
+        public static void onMethodExit(@Advice.Enter @Nullable Object transactionOrCtxObj,
                                         @Advice.Thrown @Nullable Throwable t) {
-            if (transactionObj instanceof Transaction<?>) {
-                Transaction<?> transaction = (Transaction<?>) transactionObj;
+            if (transactionOrCtxObj instanceof Transaction<?>) {
+                Transaction<?> transaction = (Transaction<?>) transactionOrCtxObj;
                 transaction.captureException(t)
                     .withOutcome(t != null ? Outcome.FAILURE : Outcome.SUCCESS)
                     .deactivate()
                     .end();
+            } else if (transactionOrCtxObj instanceof ElasticContext<?>) {
+                ((ElasticContext<?>)transactionOrCtxObj).deactivate();
             }
         }
     }

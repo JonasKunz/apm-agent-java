@@ -18,13 +18,17 @@
  */
 package co.elastic.apm.agent.scheduled;
 
+import co.elastic.apm.agent.configuration.CoreConfiguration;
 import co.elastic.apm.agent.tracer.Outcome;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doReturn;
 
 
 abstract class AbstractScheduledTransactionNameInstrumentationTest extends AbstractScheduledInstrumentationTest {
@@ -37,6 +41,17 @@ abstract class AbstractScheduledTransactionNameInstrumentationTest extends Abstr
         jeeCounter.scheduled();
         List<Transaction> transactions = checkTransactions(jeeCounter, 3, "JeeCounterImpl#scheduled");
         checkOutcome(transactions, Outcome.SUCCESS);
+    }
+
+    @Test
+    void testJeeScheduledAnnotatedContextPropagationOnly() {
+        doReturn(true).when(config.getConfig(CoreConfiguration.class)).isContextPropagationOnly();
+
+        JeeCounter jeeCounter = createJeeCounterImpl();
+        Map<String,String> context = jeeCounter.scheduled();
+
+        assertThat(context.get("traceparent")).isNotEmpty();
+        assertThat(reporter.getTransactions()).isEmpty();
     }
 
     @Test
@@ -64,7 +79,7 @@ abstract class AbstractScheduledTransactionNameInstrumentationTest extends Abstr
 
     protected static abstract class JeeCounter extends AbstractCounter {
 
-        public abstract void scheduled();
+        public abstract Map<String,String> scheduled();
 
         public abstract void scheduledJava7Repeatable();
     }

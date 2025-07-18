@@ -1,6 +1,5 @@
 [![main](https://github.com/elastic/apm-agent-java/actions/workflows/main.yml/badge.svg)](https://github.com/elastic/apm-agent-java/actions/workflows/main.yml)
-[![codecov](https://codecov.io/gh/elastic/apm-agent-java/branch/main/graph/badge.svg)](https://codecov.io/gh/elastic/apm-agent-java)
-[![Maven Central](https://img.shields.io/maven-central/v/co.elastic.apm/apm-agent-api.svg)](https://mvnrepository.com/artifact/co.elastic.apm/elastic-apm-agent/latest)
+![Maven metadata URL](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Frepo1.maven.org%2Fmaven2%2Fco%2Felastic%2Fapm%2Felastic-apm-agent%2Fmaven-metadata.xml)
 
 # apm-agent-java
 
@@ -32,10 +31,10 @@ See the [contributing documentation](CONTRIBUTING.md)
 
 Snapshots are built from `main` branch and are available here:
 
-* [elastic-apm-agent.jar](https://oss.sonatype.org/service/local/artifact/maven/redirect?r=snapshots&g=co.elastic.apm&a=elastic-apm-agent&v=LATEST)
-* [apm-agent-attach-cli.jar](https://oss.sonatype.org/service/local/artifact/maven/redirect?r=snapshots&g=co.elastic.apm&a=apm-agent-attach-cli&v=LATEST)
-* [apm-agent-attach.jar](https://oss.sonatype.org/service/local/artifact/maven/redirect?r=snapshots&g=co.elastic.apm&a=apm-agent-attach&v=LATEST)
-* [apm-agent-api.jar](https://oss.sonatype.org/service/local/artifact/maven/redirect?r=snapshots&g=co.elastic.apm&a=apm-agent-api&v=LATEST)
+* elastic-apm-agent ![Maven metadata URL](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Fco%2Felastic%2Fapm%2Felastic-apm-agent%2Fmaven-metadata.xml)
+* apm-agent-attach-cli ![Maven metadata URL](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Fco%2Felastic%2Fapm%2Fapm-agent-attach-cli%2Fmaven-metadata.xml)
+*  apm-agent-attach ![Maven metadata URL](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Fco%2Felastic%2Fapm%2Fapm-agent-attach%2Fmaven-metadata.xml)
+* apm-agent-api ![Maven metadata URL](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Fco%2Felastic%2Fapm%2Fapm-agent-api%2Fmaven-metadata.xml)
 
 Those snapshots include features & bugfixes for the next release, see [releases notes](https://www.elastic.co/guide/en/apm/agent/java/current/_unreleased.html) details.
 
